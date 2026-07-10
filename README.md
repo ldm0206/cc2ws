@@ -41,10 +41,10 @@ Flags mirror the env vars and win if both are set:
 |---|---|---|
 | `LISTEN` / `-listen` | `127.0.0.1:18080` | local HTTP listen address |
 | `UPSTREAM_BASE` / `-upstream-base` | (required) | upstream origin only — `https://host` or `http://host:port` |
-| `UPSTREAM_INSECURE_SKIP_TLS_VERIFY` | `false` | skip upstream TLS verify (self-signed local debugging only) |
-| `CONNECT_TIMEOUT` | `10s` | upstream WS dial timeout |
-| `IDLE_TIMEOUT` | `600s` | upstream WS read idle timeout |
-| `LOG_LEVEL` | `info` | log level |
+| `UPSTREAM_INSECURE_SKIP_TLS_VERIFY` / `-insecure-skip-tls-verify` | `false` | skip upstream TLS verify (self-signed local debugging only) |
+| `CONNECT_TIMEOUT` / `-connect-timeout` | `10s` | upstream WS dial timeout |
+| `IDLE_TIMEOUT` / `-idle-timeout` | `600s` | upstream WS per-read idle timeout |
+| `LOG_LEVEL` / `-log-level` | `info` | log level |
 
 ## Routes
 

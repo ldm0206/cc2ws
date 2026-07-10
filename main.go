@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 )
@@ -27,6 +28,11 @@ func run(args []string) error {
 	showVersion := fs.Bool("version", false, "print version and exit")
 	listen := fs.String("listen", envOr("LISTEN", "127.0.0.1:18080"), "HTTP listen address")
 	upstream := fs.String("upstream-base", envOr("UPSTREAM_BASE", ""), "upstream origin, e.g. https://host")
+	connectTimeout := fs.String("connect-timeout", envOr("CONNECT_TIMEOUT", "10s"), "WS dial/handshake timeout (e.g. 10s)")
+	idleTimeout := fs.String("idle-timeout", envOr("IDLE_TIMEOUT", "600s"), "per-read idle timeout (e.g. 600s)")
+	skipTLSDefault, _ := strconv.ParseBool(envOr("UPSTREAM_INSECURE_SKIP_TLS_VERIFY", "false"))
+	insecureSkipTLSVerify := fs.Bool("insecure-skip-tls-verify", skipTLSDefault, "skip upstream TLS verify (debug only)")
+	logLevel := fs.String("log-level", envOr("LOG_LEVEL", "info"), "debug/info/warn/error")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -38,6 +44,10 @@ func run(args []string) error {
 	// Flags override env; LoadConfig reads env, so mirror flags into env.
 	os.Setenv("LISTEN", *listen)
 	os.Setenv("UPSTREAM_BASE", *upstream)
+	os.Setenv("CONNECT_TIMEOUT", *connectTimeout)
+	os.Setenv("IDLE_TIMEOUT", *idleTimeout)
+	os.Setenv("UPSTREAM_INSECURE_SKIP_TLS_VERIFY", strconv.FormatBool(*insecureSkipTLSVerify))
+	os.Setenv("LOG_LEVEL", *logLevel)
 
 	cfg, err := LoadConfig()
 	if err != nil {
