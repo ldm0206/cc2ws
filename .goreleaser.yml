@@ -4,6 +4,10 @@ version: 2
 
 project_name: cc2ws
 
+before:
+  hooks:
+    - go test ./... # refuse to publish if tests fail
+
 builds:
   - id: cc2ws
     main: ./
