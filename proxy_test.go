@@ -223,8 +223,9 @@ func TestProxyForwardsMultiValueHeader(t *testing.T) {
 
 	select {
 	case vals := <-gotBeta:
-		if len(vals) != 2 {
-			t.Errorf("upstream got %d anthropic-beta values, want 2: %v", len(vals), vals)
+		want := []string{"prompt-caching-2024-07-31", "max-tokens-3-5-sonnet-2024-07-15"}
+		if len(vals) != 2 || vals[0] != want[0] || vals[1] != want[1] {
+			t.Errorf("upstream anthropic-beta=%v want exactly %v", vals, want)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("upstream never received request")

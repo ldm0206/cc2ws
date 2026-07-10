@@ -148,7 +148,7 @@ func forwardHeaders(h http.Header) http.Header {
 	out := http.Header{}
 	for _, k := range authForwardHeaders {
 		if vals := h.Values(k); len(vals) > 0 {
-			out[k] = vals
+			out[http.CanonicalHeaderKey(k)] = vals
 		}
 	}
 	return out

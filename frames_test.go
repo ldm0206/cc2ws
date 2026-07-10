@@ -232,7 +232,7 @@ func TestIsTimeoutErr(t *testing.T) {
 	if !isTimeoutErr(context.DeadlineExceeded) {
 		t.Error("context.DeadlineExceeded should be a timeout")
 	}
-	if !isTimeoutErr(&fakeNetTimeout{}) {
+	if !isTimeoutErr(timeoutErr{}) {
 		t.Error("net.Error with Timeout()==true should be a timeout")
 	}
 	if isTimeoutErr(errors.New("connection refused")) {
@@ -242,9 +242,3 @@ func TestIsTimeoutErr(t *testing.T) {
 		t.Error("nil should not classify as timeout")
 	}
 }
-
-type fakeNetTimeout struct{}
-
-func (fakeNetTimeout) Error() string   { return "i/o timeout" }
-func (fakeNetTimeout) Timeout() bool   { return true }
-func (fakeNetTimeout) Temporary() bool { return false }
