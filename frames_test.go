@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -223,3 +224,27 @@ func TestMapErrorStatus(t *testing.T) {
 		})
 	}
 }
+
+// isTimeoutErr underpins both the pump read-timeout path and the dial-timeout
+// path. Verify deterministically (the integration TestProxyDialTimeoutReturns504
+// depends on host network behavior; this test does not).
+func TestIsTimeoutErr(t *testing.T) {
+	if !isTimeoutErr(context.DeadlineExceeded) {
+		t.Error("context.DeadlineExceeded should be a timeout")
+	}
+	if !isTimeoutErr(&fakeNetTimeout{}) {
+		t.Error("net.Error with Timeout()==true should be a timeout")
+	}
+	if isTimeoutErr(errors.New("connection refused")) {
+		t.Error("plain non-timeout error should not classify as timeout")
+	}
+	if isTimeoutErr(nil) {
+		t.Error("nil should not classify as timeout")
+	}
+}
+
+type fakeNetTimeout struct{}
+
+func (fakeNetTimeout) Error() string   { return "i/o timeout" }
+func (fakeNetTimeout) Timeout() bool   { return true }
+func (fakeNetTimeout) Temporary() bool { return false }

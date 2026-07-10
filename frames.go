@@ -39,18 +39,26 @@ var terminalResponseEvents = map[string]bool{
 // nil from classifyReadError and are treated as a normal end of stream.
 var errReadTimeout = errors.New("upstream read timeout")
 
-// classifyReadError returns errReadTimeout when err is a genuine read timeout
-// (net.Error with Timeout()==true, or context.DeadlineExceeded); nil for clean
-// closes / EOF / other errors (treated as a normal end of stream).
-func classifyReadError(err error) error {
+// isTimeoutErr reports whether err is a genuine timeout: a net.Error whose
+// Timeout() is true, or context.DeadlineExceeded. Shared by the upstream read
+// path (pumps) and the dial path (proxy) so that a dial handshake read-timeout
+// (a net.Error, not context.DeadlineExceeded) maps to 504 the same way a
+// context-deadline dial timeout does.
+func isTimeoutErr(err error) bool {
 	if err == nil {
-		return nil
+		return false
 	}
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
-		return errReadTimeout
+		return true
 	}
-	if errors.Is(err, context.DeadlineExceeded) {
+	return errors.Is(err, context.DeadlineExceeded)
+}
+
+// classifyReadError returns errReadTimeout for genuine timeouts (see isTimeoutErr);
+// nil for clean closes / EOF / other errors (treated as a normal end of stream).
+func classifyReadError(err error) error {
+	if isTimeoutErr(err) {
 		return errReadTimeout
 	}
 	return nil

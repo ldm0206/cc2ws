@@ -65,7 +65,7 @@ func newProxyHandler(cfg Config, mode FrameMode) http.HandlerFunc {
 		conn, _, err := dialer.DialContext(ctx, upURL, forwardHeaders(r.Header))
 		if err != nil {
 			status := http.StatusBadGateway
-			if errors.Is(err, context.DeadlineExceeded) {
+			if isTimeoutErr(err) { // context deadline OR net handshake read-timeout
 				status = http.StatusGatewayTimeout
 			}
 			writeProxyError(w, status, "upstream websocket dial failed: "+err.Error())
