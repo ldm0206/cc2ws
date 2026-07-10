@@ -120,6 +120,3 @@ func writeProxyError(w http.ResponseWriter, status int, msg string) {
 	})
 	_, _ = w.Write(b)
 }
-
-// setUpstream is replaced in logging.go (Task 4). Temporary no-op stub.
-var setUpstream = func(ctx context.Context, upstream string) {}
