@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
 )
 
@@ -30,6 +33,65 @@ var terminalResponseEvents = map[string]bool{
 	"error":               true,
 }
 
+// errReadTimeout signals that an upstream WS read timed out (net.Error.Timeout()
+// or context.DeadlineExceeded). The proxy turns this into 504 (or an SSE error
+// frame if headers are already committed mid-stream). Clean closes / EOF return
+// nil from classifyReadError and are treated as a normal end of stream.
+var errReadTimeout = errors.New("upstream read timeout")
+
+// classifyReadError returns errReadTimeout when err is a genuine read timeout
+// (net.Error with Timeout()==true, or context.DeadlineExceeded); nil for clean
+// closes / EOF / other errors (treated as a normal end of stream).
+func classifyReadError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return errReadTimeout
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return errReadTimeout
+	}
+	return nil
+}
+
+// mapErrorStatus extracts a numeric HTTP status from a buffered upstream JSON
+// error body. Returns 502 (Bad Gateway) as the fallback when no parseable
+// 4xx/5xx code is present (e.g. string codes like "insufficient_quota"). It
+// checks error.status, error.code, and a top-level status, in that order.
+func mapErrorStatus(raw []byte) int {
+	var p struct {
+		Error struct {
+			Status json.RawMessage `json:"status"`
+			Code   json.RawMessage `json:"code"`
+		} `json:"error"`
+		Status json.RawMessage `json:"status"`
+	}
+	if json.Unmarshal(raw, &p) != nil {
+		return http.StatusBadGateway
+	}
+	for _, v := range []json.RawMessage{p.Error.Status, p.Error.Code, p.Status} {
+		if s := numericStatus(v); s != 0 {
+			return s
+		}
+	}
+	return http.StatusBadGateway
+}
+
+// numericStatus returns v as an HTTP status if it unmarshals as a number in
+// [400,599]; otherwise 0 (string codes like "insufficient_quota" are not statuses).
+func numericStatus(v json.RawMessage) int {
+	if len(v) == 0 {
+		return 0
+	}
+	var n float64
+	if json.Unmarshal(v, &n) == nil && n >= 400 && n <= 599 {
+		return int(n)
+	}
+	return 0
+}
+
 func setSSEHeaders(w http.ResponseWriter) {
 	h := w.Header()
 	h.Set("Content-Type", "text/event-stream")
@@ -43,27 +105,52 @@ func flush(w http.ResponseWriter) {
 	}
 }
 
+// writeSSETimeoutError emits a best-effort SSE error frame on an already-streaming
+// response whose upstream read timed out. Used only after the first frame has been
+// flushed (headers committed), so the status code can no longer be changed.
+func writeSSETimeoutError(w http.ResponseWriter) {
+	_, _ = fmt.Fprintf(w, "event: error\ndata: %s\n\n",
+		`{"error":{"type":"proxy_error","message":"upstream read timeout"}}`)
+	flush(w)
+}
+
 // pumpSSEBytes copies each upstream text message verbatim into the response.
 // stream=true  → text/event-stream live (one frame = one SSE chunk, written as-is).
-// stream=false → buffer to a single application/json body; 502 if it parses as {"error":...}.
+//                On an upstream read timeout after at least one emitted frame, a
+//                best-effort SSE error frame is written before returning errReadTimeout.
+//                A timeout before any frame returns errReadTimeout without writing
+//                (so the proxy can still emit 504).
+// stream=false → buffer to a single application/json body; map upstream error
+//                status code when present (4xx/5xx), else 502.
 func pumpSSEBytes(w http.ResponseWriter, r messageReader, stream bool) error {
 	if stream {
 		setSSEHeaders(w)
+		emitted := false
 		for {
 			_, data, err := r.ReadMessage()
 			if err != nil {
+				if e := classifyReadError(err); e != nil {
+					if emitted {
+						writeSSETimeoutError(w)
+					}
+					return e
+				}
 				return nil // upstream closed; end stream
 			}
 			if _, err := w.Write(data); err != nil {
 				return err
 			}
 			flush(w)
+			emitted = true
 		}
 	}
 	var buf []byte
 	for {
 		_, data, err := r.ReadMessage()
 		if err != nil {
+			if e := classifyReadError(err); e != nil {
+				return e // do NOT write buffered body — let the proxy emit 504
+			}
 			break
 		}
 		buf = append(buf, data...)
@@ -72,7 +159,7 @@ func pumpSSEBytes(w http.ResponseWriter, r messageReader, stream bool) error {
 	var probe map[string]json.RawMessage
 	if json.Unmarshal(buf, &probe) == nil {
 		if _, ok := probe["error"]; ok {
-			status = http.StatusBadGateway
+			status = mapErrorStatus(buf)
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -84,14 +171,23 @@ func pumpSSEBytes(w http.ResponseWriter, r messageReader, stream bool) error {
 // pumpTypedJSON turns each upstream typed-JSON frame into SSE (stream) or
 // aggregates to one JSON body (non-stream).
 // stream=true  → emit "event: <type>\ndata: <json>\n\n" per frame; stop at terminal event.
+//                On an upstream read timeout after at least one emitted frame, a
+//                best-effort SSE error frame is written before returning errReadTimeout.
 // stream=false → aggregate until terminal; return response.completed.response (200)
-//                or the terminal failure event body (502).
+//                or the terminal failure event body (status mapped from code, else 502).
 func pumpTypedJSON(w http.ResponseWriter, r messageReader, stream bool) error {
 	if stream {
 		setSSEHeaders(w)
+		emitted := false
 		for {
 			_, data, err := r.ReadMessage()
 			if err != nil {
+				if e := classifyReadError(err); e != nil {
+					if emitted {
+						writeSSETimeoutError(w)
+					}
+					return e
+				}
 				return nil
 			}
 			var head struct {
@@ -100,6 +196,7 @@ func pumpTypedJSON(w http.ResponseWriter, r messageReader, stream bool) error {
 			_ = json.Unmarshal(data, &head)
 			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", head.Type, data)
 			flush(w)
+			emitted = true
 			if terminalResponseEvents[head.Type] {
 				return nil
 			}
@@ -107,10 +204,12 @@ func pumpTypedJSON(w http.ResponseWriter, r messageReader, stream bool) error {
 	}
 	var lastResponse json.RawMessage
 	var failedBody json.RawMessage
-	status := http.StatusOK
 	for {
 		_, data, err := r.ReadMessage()
 		if err != nil {
+			if e := classifyReadError(err); e != nil {
+				return e // do NOT write buffered body — let the proxy emit 504
+			}
 			break
 		}
 		var head struct {
@@ -125,11 +224,14 @@ func pumpTypedJSON(w http.ResponseWriter, r messageReader, stream bool) error {
 			lastResponse = head.Response
 		case "response.failed", "response.cancelled", "response.incomplete", "error":
 			failedBody = data
-			status = http.StatusBadGateway
 		}
 		if terminalResponseEvents[head.Type] {
 			break
 		}
+	}
+	status := http.StatusOK
+	if failedBody != nil {
+		status = mapErrorStatus(failedBody)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

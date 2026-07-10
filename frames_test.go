@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -20,6 +22,30 @@ func (f *fakeReader) ReadMessage() (int, []byte, error) {
 	f.i++
 	return 1, m, nil // 1 == TextMessage
 }
+
+// fakeTimeoutReader returns the given messages normally, then a net.Error-style
+// timeout on the next read (instead of EOF).
+type fakeTimeoutReader struct {
+	msgs [][]byte
+	i    int
+}
+
+func (f *fakeTimeoutReader) ReadMessage() (int, []byte, error) {
+	if f.i < len(f.msgs) {
+		m := f.msgs[f.i]
+		f.i++
+		return 1, m, nil
+	}
+	return 0, nil, timeoutErr{}
+}
+
+// timeoutErr is a minimal net.Error whose Timeout()==true, so classifyReadError
+// treats it as an upstream read timeout.
+type timeoutErr struct{}
+
+func (timeoutErr) Error() string   { return "i/o timeout" }
+func (timeoutErr) Timeout() bool   { return true }
+func (timeoutErr) Temporary() bool { return true }
 
 func TestPumpSSEBytesStreamWritesVerbatim(t *testing.T) {
 	fr := &fakeReader{msgs: [][]byte{
@@ -131,5 +157,69 @@ func TestPumpTypedJSONNonStreamErrorMaps502(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "boom") {
 		t.Errorf("body=%q missing error payload", rec.Body.String())
+	}
+}
+
+// After at least one frame has been flushed on a stream, an upstream read
+// timeout must emit a best-effort SSE error frame and return errReadTimeout so
+// the proxy can log it (the status code is already committed and cannot change).
+func TestPumpSSEBytesStreamTimeoutWritesSSEError(t *testing.T) {
+	fr := &fakeTimeoutReader{msgs: [][]byte{
+		[]byte("data: {\"a\":1}\n\n"),
+	}}
+	rec := httptest.NewRecorder()
+	err := pumpSSEBytes(rec, fr, true)
+	if !errors.Is(err, errReadTimeout) {
+		t.Errorf("err=%v want errReadTimeout", err)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "event: error") {
+		t.Errorf("body missing SSE error event: %q", body)
+	}
+	if !strings.Contains(body, "upstream read timeout") {
+		t.Errorf("body missing timeout message: %q", body)
+	}
+}
+
+// On a non-stream response, an upstream read timeout before any body is written
+// must return errReadTimeout and write nothing, so the proxy can still emit 504.
+func TestPumpSSEBytesNonStreamTimeoutReturns504Path(t *testing.T) {
+	fr := &fakeTimeoutReader{} // immediate timeout, no frames
+	rec := httptest.NewRecorder()
+	err := pumpSSEBytes(rec, fr, false)
+	if !errors.Is(err, errReadTimeout) {
+		t.Errorf("err=%v want errReadTimeout", err)
+	}
+	if rec.Body.Len() != 0 {
+		t.Errorf("body=%q want empty so proxy can emit 504", rec.Body.String())
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("code=%d want 200 (default; pump must not call WriteHeader)", rec.Code)
+	}
+}
+
+func TestMapErrorStatus(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+		want int
+	}{
+		{"numeric error.status", `{"error":{"status":429}}`, 429},
+		{"string error.code falls back to 502", `{"error":{"code":"insufficient_quota"}}`, 502},
+		{"string error.status falls back to 502", `{"error":{"status":"rate_limit"}}`, 502},
+		{"top-level status", `{"status":402}`, 402},
+		{"no status fields -> 502", `{}`, 502},
+		{"error.status 500", `{"error":{"status":500}}`, 500},
+		{"error.code numeric in range", `{"error":{"code":503}}`, 503},
+		{"status below 400 ignored -> 502", `{"error":{"status":200}}`, 502},
+		{"invalid json -> 502", `not json`, 502},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := mapErrorStatus([]byte(c.raw))
+			if got != c.want {
+				t.Errorf("mapErrorStatus(%s)=%d want %d", c.raw, got, c.want)
+			}
+		})
 	}
 }

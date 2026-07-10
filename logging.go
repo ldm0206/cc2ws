@@ -15,15 +15,25 @@ type requestLog struct {
 }
 
 // statusRecorder wraps http.ResponseWriter to capture the status code while
-// still flushing through (important for SSE streaming).
+// still flushing through (important for SSE streaming). The committed flag is
+// set on the first WriteHeader or Write, so the proxy can tell whether headers
+// are still mutable (e.g. to emit a 504 on an upstream read timeout before any
+// frame was flushed) or already sent.
 type statusRecorder struct {
 	http.ResponseWriter
-	status int
+	status    int
+	committed bool
 }
 
 func (s *statusRecorder) WriteHeader(code int) {
 	s.status = code
+	s.committed = true
 	s.ResponseWriter.WriteHeader(code)
+}
+
+func (s *statusRecorder) Write(b []byte) (int, error) {
+	s.committed = true
+	return s.ResponseWriter.Write(b)
 }
 
 func (s *statusRecorder) Flush() {
@@ -56,7 +66,7 @@ func hasAuth(h http.Header) bool {
 }
 
 // setUpstream stashes the dialed upstream URL into the request log context.
-// Defined as a var so proxy.go (Task 3) can reference it without import cycles.
+// Defined as a var so proxy.go can reference it without import cycles.
 var setUpstream = func(ctx context.Context, upstream string) {
 	if rl, ok := ctx.Value(logCtxKey{}).(*requestLog); ok {
 		rl.upstream = upstream

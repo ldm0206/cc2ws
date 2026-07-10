@@ -25,6 +25,20 @@ var authForwardHeaders = []string{
 	"OpenAI-Project",
 }
 
+// idleConn refreshes the read deadline before every ReadMessage so IDLE_TIMEOUT
+// acts as a true per-read idle timeout, not an absolute wall-clock cap on the
+// whole stream (a 600s default would otherwise kill any legitimate stream that
+// runs longer than 10 minutes).
+type idleConn struct {
+	*websocket.Conn
+	idle time.Duration
+}
+
+func (c *idleConn) ReadMessage() (int, []byte, error) {
+	_ = c.Conn.SetReadDeadline(time.Now().Add(c.idle))
+	return c.Conn.ReadMessage()
+}
+
 // newProxyHandler builds a per-request HTTP handler that dials one upstream WS,
 // sends the raw JSON body as a single text message, and pumps frames back.
 func newProxyHandler(cfg Config, mode FrameMode) http.HandlerFunc {
@@ -59,22 +73,48 @@ func newProxyHandler(cfg Config, mode FrameMode) http.HandlerFunc {
 			return
 		}
 		defer conn.Close()
-		_ = conn.SetReadDeadline(time.Now().Add(cfg.IdleTimeout))
 
-		if err := conn.WriteMessage(websocket.TextMessage, body); err != nil {
-			writeProxyError(w, http.StatusBadGateway, "upstream write failed: "+err.Error())
+		// Write the request body with a deadline (ConnectTimeout) so a hung upstream
+		// socket can't stall the request indefinitely; clear it again right away so
+		// it does not affect any later writes.
+		_ = conn.SetWriteDeadline(time.Now().Add(cfg.ConnectTimeout))
+		writeErr := conn.WriteMessage(websocket.TextMessage, body)
+		_ = conn.SetWriteDeadline(time.Time{})
+		if writeErr != nil {
+			writeProxyError(w, http.StatusBadGateway, "upstream write failed: "+writeErr.Error())
 			return
 		}
+
+		// IDLE_TIMEOUT is enforced per-read by idleConn (deadline refreshed before
+		// every ReadMessage), not as an absolute cap set once here.
+		reader := &idleConn{Conn: conn, idle: cfg.IdleTimeout}
 
 		var pumpErr error
 		switch mode {
 		case FrameModeTypedJSON:
-			pumpErr = pumpTypedJSON(w, conn, stream)
+			pumpErr = pumpTypedJSON(w, reader, stream)
 		default:
-			pumpErr = pumpSSEBytes(w, conn, stream)
+			pumpErr = pumpSSEBytes(w, reader, stream)
 		}
 		if pumpErr != nil {
-			log.Printf("pump %s: %v", r.URL.Path, pumpErr)
+			if errors.Is(pumpErr, errReadTimeout) {
+				log.Printf("upstream read timeout %s", r.URL.Path)
+				// If the pump already committed headers (mid-stream frame was flushed),
+				// the status code is already sent — nothing more we can do. Otherwise
+				// emit a 504 so the client sees the timeout.
+				if sr, ok := w.(*statusRecorder); ok {
+					if !sr.committed {
+						writeProxyError(w, http.StatusGatewayTimeout, "upstream read timeout")
+					}
+				} else {
+					// No statusRecorder wrapping the handler (e.g. direct unit-test
+					// calls). Best-effort 504; http.ResponseWriter ignores WriteHeader
+					// after body bytes have started, so this is safe either way.
+					writeProxyError(w, http.StatusGatewayTimeout, "upstream read timeout")
+				}
+			} else {
+				log.Printf("pump %s: %v", r.URL.Path, pumpErr)
+			}
 		}
 	}
 }
@@ -101,11 +141,14 @@ func (c Config) upstreamURL(u *url.URL) string {
 	return out
 }
 
+// forwardHeaders copies the allowlisted request headers through to the upstream
+// WS handshake, preserving every value for keys that carry multiple (notably
+// anthropic-beta, which may legitimately carry several comma-separated values).
 func forwardHeaders(h http.Header) http.Header {
 	out := http.Header{}
 	for _, k := range authForwardHeaders {
-		if v := h.Get(k); v != "" {
-			out.Set(k, v)
+		if vals := h.Values(k); len(vals) > 0 {
+			out[k] = vals
 		}
 	}
 	return out
