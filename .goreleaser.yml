@@ -1,0 +1,33 @@
+# Minimal goreleaser config for cc2ws.
+# Relies on goreleaser defaults for archives (tar.gz; windows → zip) and checksums.
+version: 2
+
+project_name: cc2ws
+
+builds:
+  - id: cc2ws
+    main: ./
+    binary: cc2ws
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    goos:
+      - windows
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+
+release:
+  draft: false
+  prerelease: false
