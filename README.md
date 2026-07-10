@@ -8,9 +8,8 @@ API) send plain HTTP POST. cc2ws dials a **same-path upstream WebSocket**
 frames back to the client as HTTP SSE or JSON.
 
 > The upstream must accept **WebSocket Upgrade on the same path** as the HTTP
-> route (e.g. [AxonHub](https://github.com)-style gateways). Plain HTTPS-only
-> OpenAI/Anthropic official endpoints will **not** work — they are not WebSocket
-> gateways.
+> route (AxonHub-style gateways). Plain HTTPS-only OpenAI/Anthropic official
+> endpoints will **not** work — they are not WebSocket gateways.
 
 ## Install
 
@@ -32,7 +31,7 @@ export LISTEN=127.0.0.1:18080
 Flags mirror the env vars and win if both are set:
 
 ```bash
-./ccws -listen 127.0.0.1:18080 -upstream-base https://hub.example.com
+./cc2ws -listen 127.0.0.1:18080 -upstream-base https://hub.example.com
 ./cc2ws -version
 ```
 
@@ -110,9 +109,12 @@ curl -N $BASE/v1/responses -H "Authorization: $KEY" -H "content-type: applicatio
 curl -sS $BASE/v1/responses -H "Authorization: $KEY" -H "content-type: application/json" \
   -d '{"model":"glm-5.2","stream":false,"input":"Reply with exactly: pong","max_output_tokens":32}'
 
-# 6) Bad upstream → 502
-UPSTREAM_BASE=http://127.0.0.1:1 ./cc2ws &
-curl -sS -o /dev/null -w "%{http_code}\n" $BASE/v1/messages ...
+# 6) Bad upstream → 502 (run cc2ws against an unreachable upstream, on a separate port)
+UPSTREAM_BASE=http://127.0.0.1:1 LISTEN=127.0.0.1:18081 ./cc2ws &
+sleep 1
+curl -sS -o /dev/null -w "%{http_code}\n" http://127.0.0.1:18081/v1/messages \
+  -H "content-type: application/json" \
+  -d '{"model":"glm-5.2","max_tokens":32,"messages":[{"role":"user","content":"ping"}]}'
 # → 502
 ```
 
