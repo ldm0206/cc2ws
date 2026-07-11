@@ -66,6 +66,7 @@ jobs:
             -o "dist/cc2ws-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}" ./cmd/cc2ws
       - name: Package macos .dmg
         if: matrix.goos == 'darwin'
+        continue-on-error: true
         shell: bash
         run: |
           VER="${{ steps.ver.outputs.version }}"
