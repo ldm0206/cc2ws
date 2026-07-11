@@ -34,6 +34,7 @@ func TestSwapSchemeInvalid(t *testing.T) {
 }
 
 func TestLoadConfigRequiresUpstream(t *testing.T) {
+	t.Setenv("CC2WS_CONFIG_DIR", t.TempDir())
 	t.Setenv("UPSTREAM_BASE", "")
 	_, err := LoadConfig()
 	if err == nil {
@@ -42,6 +43,7 @@ func TestLoadConfigRequiresUpstream(t *testing.T) {
 }
 
 func TestLoadConfigOK(t *testing.T) {
+	t.Setenv("CC2WS_CONFIG_DIR", t.TempDir())
 	t.Setenv("UPSTREAM_BASE", "https://hub.example.com")
 	t.Setenv("LISTEN", "127.0.0.1:19090")
 	cfg, err := LoadConfig()

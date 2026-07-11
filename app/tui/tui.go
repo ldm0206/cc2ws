@@ -86,8 +86,7 @@ func (m model) viewSettings() string {
 			"  Listen        : %s\n"+
 			"  Connect/idle  : %s / %s   Level: %s\n"+
 			"  Skip TLS verify: %v\n\n"+
-			"[1]Settings [2]Logs [3]About  [s]Start/[x]Stop\n"+
-			"[e]Edit config  [u]Check update  [q]Quit",
+			"[1]Settings [2]Logs [3]About  [s]Start/[x]Stop  [q]Quit",
 		core.Version, m.cfg.UpstreamBase, m.cfg.Listen,
 		m.cfg.ConnectTimeout, m.cfg.IdleTimeout, m.cfg.LogLevel,
 		m.cfg.InsecureSkipTLSVerify)

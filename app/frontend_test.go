@@ -3,7 +3,6 @@ package app
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -35,15 +34,5 @@ func TestRunFrontend_HeadlessReturnsNilOnCtxCancel(t *testing.T) {
 
 	if err := RunFrontend(ctx, h, true); err != nil {
 		t.Fatalf("RunFrontend(headless=true) = %v, want nil", err)
-	}
-}
-
-// RunFrontend(headless=false) returns errNoFrontend since this build has no
-// native frontend compiled in (Tasks 6-8 add build-tagged impls).
-func TestRunFrontend_NoNativeReturnsErrNoFrontend(t *testing.T) {
-	h := core.NewHandle(freshConfig())
-	err := RunFrontend(context.Background(), h, false)
-	if !errors.Is(err, errNoFrontend) {
-		t.Fatalf("RunFrontend(headless=false) = %v, want errNoFrontend", err)
 	}
 }

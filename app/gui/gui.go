@@ -62,7 +62,11 @@ func (g *GuiFrontend) Run(ctx context.Context, h *core.Handle) error {
 			return
 		}
 		upstream.SetText(newCfg.UpstreamBase)
-		status.SetText("Running")
+		if h.Running() {
+			status.SetText("Running")
+		} else {
+			status.SetText("Stopped")
+		}
 	})
 
 	settingsTab := container.NewVBox(

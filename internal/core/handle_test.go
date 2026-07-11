@@ -39,6 +39,7 @@ func TestHandleSetConfigHotRestart(t *testing.T) {
 		UpstreamWS:     "wss://hub.example.com",
 		ConnectTimeout: time.Second,
 		IdleTimeout:    time.Second,
+		LogLevel:       "info",
 	}
 	t.Setenv("CC2WS_CONFIG_DIR", t.TempDir())
 	h := NewHandle(cfg)
@@ -56,6 +57,20 @@ func TestHandleSetConfigHotRestart(t *testing.T) {
 	}
 	if !h.Running() {
 		t.Error("should still be running after hot restart")
+	}
+}
+
+func TestHandleSetConfigRejectsZeroTimeout(t *testing.T) {
+	cfg := Config{Listen: "127.0.0.1:0", UpstreamBase: "https://hub.example.com", UpstreamWS: "wss://hub.example.com", ConnectTimeout: time.Second, IdleTimeout: time.Second}
+	t.Setenv("CC2WS_CONFIG_DIR", t.TempDir())
+	h := NewHandle(cfg)
+	bad := cfg
+	bad.ConnectTimeout = 0
+	if err := h.SetConfig(bad); err == nil {
+		t.Fatal("SetConfig should reject ConnectTimeout=0")
+	}
+	if h.Config().ConnectTimeout != time.Second {
+		t.Error("config should be unchanged after rejected SetConfig")
 	}
 }
 

@@ -18,6 +18,9 @@ permissions:
 
 jobs:
   build:
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
@@ -35,6 +38,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - name: Test
+        run: go test ./...
       - name: Compute next version (minor bump)
         id: ver
         run: |

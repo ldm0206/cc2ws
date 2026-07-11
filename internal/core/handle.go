@@ -73,7 +73,9 @@ func (h *Handle) Start() error {
 		if errors.Is(err, http.ErrServerClosed) {
 			err = nil
 		}
-		_ = err
+		if err != nil {
+			logf(LevelError, "serve: %v", err)
+		}
 	}()
 	_ = cancelCtx // held for lifecycle; cancel fires on Serve return or Stop
 	logf(LevelInfo, "cc2ws %s listening on %s, upstream %s (ws=%s)",
@@ -121,6 +123,9 @@ func (h *Handle) SetConfig(cfg Config) error {
 		return err
 	}
 	cfg.UpstreamWS = ws
+	if err := Validate(cfg); err != nil {
+		return err
+	}
 	if err := SaveConfig(cfg); err != nil {
 		return err
 	}
