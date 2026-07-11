@@ -1,14 +1,12 @@
 name: release
 
-# On every push to main: compute next version (minor+1), tag it, then goreleaser
-# builds 6 targets and publishes a GitHub Release.
+# On every push to main: compute next version (minor+1), tag it, then a native
+# build matrix produces one raw binary per (os, arch), plus a combined
+# checksums.txt, published to a GitHub Release. No archives, no goreleaser.
 on:
   push:
     branches: [main]
 
-# Serialize: two rapid pushes to main must not race on tag creation / release
-# publishing. cancel-in-progress=false so an in-flight release completes rather
-# than being cancelled mid-publish.
 concurrency:
   group: release
   cancel-in-progress: false
@@ -17,19 +15,24 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, goos: windows, goarch: amd64, ext: .exe, cgo: 1 }
+          - { os: macos-latest,   goos: darwin,  goarch: amd64,         cgo: 1 }
+          - { os: macos-latest,   goos: darwin,  goarch: arm64,         cgo: 1 }
+          - { os: ubuntu-latest,  goos: linux,   goarch: amd64,         cgo: 0 }
+          - { os: ubuntu-latest,  goos: linux,   goarch: arm64,         cgo: 0 }
+    runs-on: ${{ matrix.os }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # full history needed for tag discovery
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-
       - name: Compute next version (minor bump)
         id: ver
         run: |
@@ -43,20 +46,73 @@ jobs:
             next="v${major}.$((minor+1)).0"
           fi
           echo "version=$next" >> "$GITHUB_OUTPUT"
-          echo "Next version: $next"
+      - name: Build raw binary (native)
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: ${{ matrix.cgo }}
+        run: |
+          mkdir -p dist
+          go build -ldflags "-s -w -X cc2ws/internal/core.Version=${{ steps.ver.outputs.version }}" \
+            -o "dist/cc2ws-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}" ./cmd/cc2ws
+      - name: Compute SHA256
+        id: sha
+        run: |
+          cd dist
+          file="cc2ws-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
+          sum=$(sha256sum "$file" | awk '{print $1}')
+          echo "${sum}  ${file}" >> checksums.txt
+          echo "sha=${sum}" >> "$GITHUB_OUTPUT"
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cc2ws-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/cc2ws-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
+      - name: Upload checksum line artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: checksums-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/checksums.txt
 
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Compute next version
+        id: ver
+        run: |
+          set -euo pipefail
+          latest=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || echo "")
+          if [ -z "$latest" ]; then next="v0.1.0"; else
+            major=$(echo "$latest" | sed -E 's/^v([0-9]+)\.([0-9]+)\.([0-9]+).*/\1/')
+            minor=$(echo "$latest" | sed -E 's/^v([0-9]+)\.([0-9]+)\.([0-9]+).*/\2/')
+            next="v${major}.$((minor+1)).0"; fi
+          echo "version=$next" >> "$GITHUB_OUTPUT"
       - name: Create and push tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag "${{ steps.ver.outputs.version }}"
           git push origin "${{ steps.ver.outputs.version }}"
-
-      - name: Run goreleaser
-        uses: goreleaser/goreleaser-action@v6
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
         with:
-          distribution: goreleaser
-          version: latest
-          args: release --clean
+          path: dist
+          merge-multiple: true
+      - name: Merge checksums.txt
+        run: |
+          cd dist
+          cat checksums-*/checksums.txt | sort > checksums.txt
+          rm -rf checksums-*
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.version }}
+          files: |
+            dist/cc2ws-*
+            dist/checksums.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
