@@ -1,4 +1,4 @@
-package main
+package core
 
 import (
 	"net/http"
@@ -43,12 +43,5 @@ func TestKnownRoutesRegistered(t *testing.T) {
 	r.ServeHTTP(rec, httptest.NewRequest("GET", "/v1/messages", nil))
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("GET /v1/messages status=%d want 405", rec.Code)
-	}
-}
-
-func TestRunVersionFlag(t *testing.T) {
-	err := run([]string{"-version"})
-	if err != nil {
-		t.Fatalf("run -version error: %v", err)
 	}
 }

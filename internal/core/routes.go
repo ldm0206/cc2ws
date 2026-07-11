@@ -1,4 +1,4 @@
-package main
+package core
 
 import "net/http"
 
@@ -12,7 +12,7 @@ func newRouter(cfg Config) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"status":"ok","version":"` + version + `"}`))
+		_, _ = w.Write([]byte(`{"status":"ok","version":"` + Version + `"}`))
 	})
 	mux.Handle("POST /v1/chat/completions", newProxyHandler(cfg, FrameModeSSEBytes))
 	mux.Handle("POST /v1/responses", newProxyHandler(cfg, FrameModeTypedJSON))

@@ -1,20 +1,17 @@
+// cmd/cc2ws/main.go
 package main
 
 import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
-	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
 	"syscall"
-	"time"
-)
 
-// version is injected at build time via ldflags: -ldflags "-X main.version=v0.1.0".
-var version = "dev"
+	"cc2ws/internal/core"
+)
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -37,11 +34,10 @@ func run(args []string) error {
 		return err
 	}
 	if *showVersion {
-		fmt.Println("cc2ws", version)
+		fmt.Println("cc2ws", core.Version)
 		return nil
 	}
 
-	// Flags override env; LoadConfig reads env, so mirror flags into env.
 	os.Setenv("LISTEN", *listen)
 	os.Setenv("UPSTREAM_BASE", *upstream)
 	os.Setenv("CONNECT_TIMEOUT", *connectTimeout)
@@ -49,33 +45,19 @@ func run(args []string) error {
 	os.Setenv("UPSTREAM_INSECURE_SKIP_TLS_VERIFY", strconv.FormatBool(*insecureSkipTLSVerify))
 	os.Setenv("LOG_LEVEL", *logLevel)
 
-	cfg, err := LoadConfig()
+	cfg, err := core.LoadConfig()
 	if err != nil {
 		return err
 	}
-	log.Printf("cc2ws %s listening on %s, upstream %s (ws=%s)",
-		version, cfg.Listen, cfg.UpstreamBase, cfg.UpstreamWS)
 
-	srv := &http.Server{
-		Addr:         cfg.Listen,
-		Handler:      withRequestLog(newRouter(cfg)),
-		ReadTimeout:  60 * time.Second,
-		WriteTimeout: 0, // streaming responses must not time out on write
-		IdleTimeout:  120 * time.Second,
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	return core.Run(ctx, cfg)
+}
+
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
 	}
-
-	errCh := make(chan error, 1)
-	go func() { errCh <- srv.ListenAndServe() }()
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	select {
-	case err := <-errCh:
-		return err
-	case <-sigCh:
-		log.Printf("cc2ws shutting down")
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		return srv.Shutdown(ctx)
-	}
+	return def
 }

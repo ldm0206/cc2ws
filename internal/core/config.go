@@ -1,4 +1,5 @@
-package main
+// internal/core/config.go
+package core
 
 import (
 	"fmt"
@@ -8,19 +9,16 @@ import (
 	"time"
 )
 
-// Config holds proxy configuration merged from environment (and CLI in main.go).
 type Config struct {
 	Listen                string
-	UpstreamBase          string // origin as given, e.g. https://host
-	UpstreamWS            string // scheme-swapped origin, e.g. wss://host
+	UpstreamBase          string
+	UpstreamWS            string
 	InsecureSkipTLSVerify bool
 	ConnectTimeout        time.Duration
 	IdleTimeout           time.Duration
 	LogLevel              string
 }
 
-// swapScheme converts an http(s):// origin to a ws(s):// origin, stripping any
-// path/query (UPSTREAM_BASE is an origin only). scheme rule: https→wss, http→ws.
 func swapScheme(base string) (string, error) {
 	u, err := url.Parse(base)
 	if err != nil {
@@ -44,7 +42,6 @@ func swapScheme(base string) (string, error) {
 	return u.String(), nil
 }
 
-// LoadConfig reads environment variables and validates them.
 func LoadConfig() (Config, error) {
 	base := envOr("UPSTREAM_BASE", "")
 	if base == "" {
