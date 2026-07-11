@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"time"
 )
@@ -51,7 +50,7 @@ func withRequestLog(next http.Handler) http.Handler {
 		rl := &requestLog{auth: hasAuth(r.Header)}
 		ctx := context.WithValue(r.Context(), logCtxKey{}, rl)
 		next.ServeHTTP(sr, r.WithContext(ctx))
-		log.Printf("%s %s %d %s upstream=%s auth=%v",
+		logf(LevelInfo, "%s %s %d %s upstream=%s auth=%v",
 			r.Method, r.URL.RequestURI(), sr.status, time.Since(start), rl.upstream, rl.auth)
 	})
 }

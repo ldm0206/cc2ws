@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"time"
@@ -69,7 +68,7 @@ func newProxyHandler(cfg Config, mode FrameMode) http.HandlerFunc {
 				status = http.StatusGatewayTimeout
 			}
 			writeProxyError(w, status, "upstream websocket dial failed: "+err.Error())
-			log.Printf("dial %s: %v", upURL, err)
+			logf(LevelWarn, "dial %s: %v", upURL, err)
 			return
 		}
 		defer conn.Close()
@@ -98,7 +97,7 @@ func newProxyHandler(cfg Config, mode FrameMode) http.HandlerFunc {
 		}
 		if pumpErr != nil {
 			if errors.Is(pumpErr, errReadTimeout) {
-				log.Printf("upstream read timeout %s", r.URL.Path)
+				logf(LevelWarn, "upstream read timeout %s", r.URL.Path)
 				// If the pump already committed headers (mid-stream frame was flushed),
 				// the status code is already sent — nothing more we can do. Otherwise
 				// emit a 504 so the client sees the timeout.
@@ -113,7 +112,7 @@ func newProxyHandler(cfg Config, mode FrameMode) http.HandlerFunc {
 					writeProxyError(w, http.StatusGatewayTimeout, "upstream read timeout")
 				}
 			} else {
-				log.Printf("pump %s: %v", r.URL.Path, pumpErr)
+				logf(LevelWarn, "pump %s: %v", r.URL.Path, pumpErr)
 			}
 		}
 	}

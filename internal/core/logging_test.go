@@ -2,10 +2,8 @@ package core
 
 import (
 	"bytes"
-	"log"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 )
 
@@ -41,8 +39,9 @@ func TestHasAuth(t *testing.T) {
 
 func TestRequestLogRedactsKey(t *testing.T) {
 	var buf bytes.Buffer
-	log.SetOutput(&buf)
-	defer log.SetOutput(os.Stderr)
+	prevStdout := Log.stdout
+	Log.stdout = &buf
+	defer func() { Log.stdout = prevStdout }()
 
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		setUpstream(r.Context(), "wss://host/path")

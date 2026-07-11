@@ -3,7 +3,6 @@ package core
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"time"
 )
@@ -15,7 +14,7 @@ var Version = "dev"
 // server errors. On ctx cancellation it performs a 10s graceful shutdown.
 // The caller owns flag parsing and Config construction.
 func Run(ctx context.Context, cfg Config) error {
-	log.Printf("cc2ws %s listening on %s, upstream %s (ws=%s)",
+	logf(LevelInfo, "cc2ws %s listening on %s, upstream %s (ws=%s)",
 		Version, cfg.Listen, cfg.UpstreamBase, cfg.UpstreamWS)
 
 	srv := &http.Server{
@@ -33,7 +32,7 @@ func Run(ctx context.Context, cfg Config) error {
 	case err := <-errCh:
 		return err
 	case <-ctx.Done():
-		log.Printf("cc2ws shutting down")
+		logf(LevelInfo, "cc2ws shutting down")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
