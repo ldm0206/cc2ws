@@ -3,7 +3,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -11,6 +10,7 @@ import (
 	"strconv"
 	"syscall"
 
+	"cc2ws/app"
 	"cc2ws/internal/core"
 )
 
@@ -52,14 +52,16 @@ func run(args []string) error {
 		return err
 	}
 
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	h := core.NewHandle(cfg)
 	if *headless {
-		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-		defer stop()
-		return core.Run(ctx, cfg)
+		if err := h.Start(); err != nil {
+			return err
+		}
 	}
-	// Non-headless path: no GUI/TUI frontend is compiled into this build yet.
-	// Tasks 6-7 wire in the frontend via cc2ws/app.runFrontend.
-	return errors.New("no GUI/TUI frontend compiled for this build; use -headless")
+	return app.RunFrontend(ctx, h, *headless)
 }
 
 func envOr(key, def string) string {
