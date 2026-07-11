@@ -23,13 +23,6 @@ func (headlessFrontend) Run(ctx context.Context, h *core.Handle) error {
 	return h.Stop()
 }
 
-// selectNativeFrontend is implemented in app/gui or app/tui (build-tagged).
-// The fallback here returns nil so non-headless mode fails cleanly on a build
-// with no frontend compiled in.
-func selectNativeFrontend() Frontend {
-	return nil
-}
-
 // RunFrontend dispatches to the headless or native frontend. The caller is
 // responsible for starting the Handle's server before this returns for the
 // headless path; the native frontend (GUI/TUI) owns its own Start/Stop so it
