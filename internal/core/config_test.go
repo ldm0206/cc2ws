@@ -1,6 +1,11 @@
 package core
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
 
 func TestSwapScheme(t *testing.T) {
 	cases := []struct{ in, want string }{
@@ -48,5 +53,92 @@ func TestLoadConfigOK(t *testing.T) {
 	}
 	if cfg.Listen != "127.0.0.1:19090" {
 		t.Errorf("Listen=%q", cfg.Listen)
+	}
+}
+
+func TestSaveLoadRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CC2WS_CONFIG_DIR", dir) // override for tests
+	in := Config{
+		Listen:                "127.0.0.1:20000",
+		UpstreamBase:          "https://hub.example.com",
+		InsecureSkipTLSVerify: true,
+		ConnectTimeout:        15 * time.Second,
+		IdleTimeout:           300 * time.Second,
+		LogLevel:              "debug",
+	}
+	if err := SaveConfig(in); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	// File must be the lowest-precedence input above defaults, so LoadConfig
+	// (which also reads env) should reflect the file when env is unset.
+	t.Setenv("UPSTREAM_BASE", in.UpstreamBase) // file sets base too; either way
+	out, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if out.Listen != in.Listen {
+		t.Errorf("Listen=%q want %q", out.Listen, in.Listen)
+	}
+	if out.IdleTimeout != in.IdleTimeout {
+		t.Errorf("IdleTimeout=%v want %v", out.IdleTimeout, in.IdleTimeout)
+	}
+	if !out.InsecureSkipTLSVerify {
+		t.Errorf("InsecureSkipTLSVerify=false want true")
+	}
+}
+
+func TestEnvOverridesFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CC2WS_CONFIG_DIR", dir)
+	file := Config{
+		Listen:       "127.0.0.1:20000",
+		UpstreamBase: "https://from-file.example.com",
+	}
+	if err := SaveConfig(file); err != nil {
+		t.Fatal(err)
+	}
+	// Env wins over file.
+	t.Setenv("LISTEN", "127.0.0.1:30000")
+	t.Setenv("UPSTREAM_BASE", "https://from-env.example.com")
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Listen != "127.0.0.1:30000" {
+		t.Errorf("Listen=%q want env value 127.0.0.1:30000", cfg.Listen)
+	}
+	if cfg.UpstreamBase != "https://from-env.example.com" {
+		t.Errorf("UpstreamBase=%q want env value", cfg.UpstreamBase)
+	}
+}
+
+func TestCorruptConfigFileIgnored(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CC2WS_CONFIG_DIR", dir)
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte("{not valid json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Must NOT error — fall back to defaults+env.
+	t.Setenv("UPSTREAM_BASE", "https://hub.example.com")
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig should ignore corrupt file, got: %v", err)
+	}
+	if cfg.UpstreamBase != "https://hub.example.com" {
+		t.Errorf("UpstreamBase=%q", cfg.UpstreamBase)
+	}
+}
+
+func TestConfigPath(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CC2WS_CONFIG_DIR", dir)
+	p, err := ConfigPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Base(p) != "config.json" {
+		t.Errorf("ConfigPath base=%q want config.json", filepath.Base(p))
 	}
 }
