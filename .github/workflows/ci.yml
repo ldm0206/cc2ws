@@ -1,7 +1,8 @@
 name: ci
 
-# Build and test on every push and PR, so broken code never reaches main
-# (which auto-releases).
+# Build and test on every push and PR across all three target OSes, so a
+# build-tag mistake (e.g. TUI code leaking into a Windows build) or a
+# Fyne/TUI compile failure fails CI here, not at release time.
 on:
   push:
     branches: [main]
@@ -12,7 +13,11 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
