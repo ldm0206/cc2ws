@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -30,6 +31,7 @@ func run(args []string) error {
 	skipTLSDefault, _ := strconv.ParseBool(envOr("UPSTREAM_INSECURE_SKIP_TLS_VERIFY", "false"))
 	insecureSkipTLSVerify := fs.Bool("insecure-skip-tls-verify", skipTLSDefault, "skip upstream TLS verify (debug only)")
 	logLevel := fs.String("log-level", envOr("LOG_LEVEL", "info"), "debug/info/warn/error")
+	headless := fs.Bool("headless", envOr("CC2WS_HEADLESS", "true") == "true", "run without UI (servers/SSH/CI)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -50,9 +52,14 @@ func run(args []string) error {
 		return err
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-	return core.Run(ctx, cfg)
+	if *headless {
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		defer stop()
+		return core.Run(ctx, cfg)
+	}
+	// Non-headless path: no GUI/TUI frontend is compiled into this build yet.
+	// Tasks 6-7 wire in the frontend via cc2ws/app.runFrontend.
+	return errors.New("no GUI/TUI frontend compiled for this build; use -headless")
 }
 
 func envOr(key, def string) string {
