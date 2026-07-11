@@ -140,3 +140,13 @@ func (h *Handle) SetConfig(cfg Config) error {
 func (h *Handle) SubscribeLogs() (<-chan LogEntry, func()) {
 	return Log.Subscribe()
 }
+
+// CheckUpdate queries GitHub Releases for a newer cc2ws version.
+func (h *Handle) CheckUpdate(ctx context.Context) (UpdateInfo, error) {
+	return NewUpdater().Check(ctx)
+}
+
+// ApplyUpdate downloads, verifies, and applies the given update.
+func (h *Handle) ApplyUpdate(ctx context.Context, info UpdateInfo) error {
+	return NewUpdater().Apply(ctx, info)
+}
