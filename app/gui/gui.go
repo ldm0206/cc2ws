@@ -124,11 +124,14 @@ func (g *GuiFrontend) Run(ctx context.Context, h *core.Handle) error {
 	)
 	w.SetContent(tabs)
 
-	// Start the proxy + pump logs into the Logs view.
+	// Start the proxy; surface a bind error in the UI instead of returning
+	// before the window appears (which looked like a silent crash / console
+	// flash on Windows when port :18080 was already in use).
 	if err := h.Start(); err != nil {
-		return err
+		status.SetText("Error: " + err.Error())
+	} else {
+		status.SetText("Running")
 	}
-	status.SetText("Running")
 
 	var logLines []string
 	logCh, unsub := h.SubscribeLogs()

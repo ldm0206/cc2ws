@@ -1,10 +1,12 @@
 name: release
 
 # On every push to main: compute next version (minor+1), tag it, then a native
-# build matrix produces one raw binary per (os, arch). The publish job downloads
-# all binaries, computes checksums.txt, and publishes a GitHub Release with raw
-# binaries (no archives). The in-app updater fetches checksums.txt to verify
-# SHA256 before self-applying.
+# build matrix produces one raw binary per (os, arch) plus a macOS .dmg bundle.
+# The publish job downloads them, computes checksums.txt over the raw binaries,
+# and publishes a GitHub Release. The in-app updater fetches the raw binary for
+# its GOOS/GOARCH and verifies it against checksums.txt before self-applying.
+# No zip/tar.gz archives: Windows ships a GUI .exe, Linux a raw TUI binary,
+# macOS a .dmg (with the .app inside) for drag-to-Applications.
 on:
   push:
     branches: [main]
@@ -62,26 +64,7 @@ jobs:
           mkdir -p dist
           go build -ldflags "-s -w ${{ matrix.gui_ldflag }} -X cc2ws/internal/core.Version=${{ steps.ver.outputs.version }}" \
             -o "dist/cc2ws-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}" ./cmd/cc2ws
-      - name: Package windows zip
-        if: matrix.goos == 'windows'
-        shell: bash
-        run: cd dist && 7z a -tzip cc2ws-windows-amd64.zip cc2ws-windows-amd64.exe
-      - name: Package linux tarball
-        if: matrix.goos == 'linux'
-        shell: bash
-        run: |
-          cd dist
-          chmod +x cc2ws-linux-${{ matrix.goarch }}
-          cat > cc2ws.desktop <<'EOF'
-          [Desktop Entry]
-          Type=Application
-          Name=cc2ws
-          Exec=cc2ws
-          Terminal=false
-          Categories=Network;
-          EOF
-          tar -czf cc2ws-linux-${{ matrix.goarch }}.tar.gz cc2ws-linux-${{ matrix.goarch }} cc2ws.desktop
-      - name: Package macos .app bundle
+      - name: Package macos .dmg
         if: matrix.goos == 'darwin'
         shell: bash
         run: |
@@ -104,7 +87,10 @@ jobs:
           </dict>
           </plist>
           EOF
-          ( cd stage && ditto -c -k --keepParent cc2ws.app ../dist/cc2ws-darwin-${{ matrix.goarch }}.app.zip )
+          mkdir -p dmgstage
+          cp -R stage/cc2ws.app dmgstage/
+          ln -s /Applications dmgstage/Applications
+          hdiutil create -volname cc2ws -srcfolder dmgstage -ov -format UDZO "dist/cc2ws-darwin-${{ matrix.goarch }}.dmg"
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
