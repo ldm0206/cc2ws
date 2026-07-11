@@ -187,3 +187,55 @@ func envOr(key, def string) string {
 	}
 	return def
 }
+
+// Validate returns nil if cfg's upstream origin and durations parse cleanly
+// and the log level is one of debug/info/warn/error. Used by the GUI "Save &
+// Apply" before calling SetConfig.
+func Validate(cfg Config) error {
+	if _, err := swapScheme(cfg.UpstreamBase); err != nil {
+		return err
+	}
+	if cfg.ConnectTimeout <= 0 {
+		return fmt.Errorf("connect timeout must be > 0")
+	}
+	if cfg.IdleTimeout <= 0 {
+		return fmt.Errorf("idle timeout must be > 0")
+	}
+	switch cfg.LogLevel {
+	case "debug", "info", "warn", "error":
+	default:
+		return fmt.Errorf("invalid log level %q", cfg.LogLevel)
+	}
+	return nil
+}
+
+// BuildConfigFromStrings parses the GUI form's string fields into a validated
+// Config (computing UpstreamWS). Pure — no Fyne — so it's testable on every
+// platform without a C compiler.
+func BuildConfigFromStrings(upstream, listen, ct, it, level string, skipTLS bool) (Config, error) {
+	ctd, err := time.ParseDuration(ct)
+	if err != nil {
+		return Config{}, fmt.Errorf("connect timeout: %w", err)
+	}
+	itd, err := time.ParseDuration(it)
+	if err != nil {
+		return Config{}, fmt.Errorf("idle timeout: %w", err)
+	}
+	ws, err := swapScheme(upstream)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg := Config{
+		Listen:                listen,
+		UpstreamBase:          upstream,
+		UpstreamWS:            ws,
+		InsecureSkipTLSVerify: skipTLS,
+		ConnectTimeout:        ctd,
+		IdleTimeout:           itd,
+		LogLevel:              level,
+	}
+	if err := Validate(cfg); err != nil {
+		return cfg, err
+	}
+	return cfg, nil
+}

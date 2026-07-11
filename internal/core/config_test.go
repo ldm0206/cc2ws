@@ -142,3 +142,51 @@ func TestConfigPath(t *testing.T) {
 		t.Errorf("ConfigPath base=%q want config.json", filepath.Base(p))
 	}
 }
+
+func TestValidate(t *testing.T) {
+	good := Config{UpstreamBase: "https://hub.example.com", ConnectTimeout: 10 * time.Second, IdleTimeout: 600 * time.Second, LogLevel: "info"}
+	if err := Validate(good); err != nil {
+		t.Fatalf("good cfg: %v", err)
+	}
+	badScheme := good
+	badScheme.UpstreamBase = "ftp://x"
+	if err := Validate(badScheme); err == nil {
+		t.Error("bad scheme should fail")
+	}
+	zeroCT := good
+	zeroCT.ConnectTimeout = 0
+	if err := Validate(zeroCT); err == nil {
+		t.Error("zero connect timeout should fail")
+	}
+	badLevel := good
+	badLevel.LogLevel = "verbose"
+	if err := Validate(badLevel); err == nil {
+		t.Error("bad level should fail")
+	}
+}
+
+func TestBuildConfigFromStrings(t *testing.T) {
+	cases := []struct {
+		name              string
+		upstream, listen  string
+		ct, it, level     string
+		skipTLS           bool
+		wantErr           bool
+	}{
+		{"valid", "https://hub.example.com", "127.0.0.1:18080", "10s", "600s", "info", false, false},
+		{"bad scheme", "ftp://x", "127.0.0.1:18080", "10s", "600s", "info", false, true},
+		{"bad duration", "https://hub.example.com", "127.0.0.1:18080", "notaduration", "600s", "info", false, true},
+		{"bad level", "https://hub.example.com", "127.0.0.1:18080", "10s", "600s", "verbose", false, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			cfg, err := BuildConfigFromStrings(c.upstream, c.listen, c.ct, c.it, c.level, c.skipTLS)
+			if (err != nil) != c.wantErr {
+				t.Fatalf("err=%v wantErr=%v", err, c.wantErr)
+			}
+			if err == nil && cfg.UpstreamWS == "" {
+				t.Error("UpstreamWS should be set on success")
+			}
+		})
+	}
+}
