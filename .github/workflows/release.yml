@@ -25,11 +25,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: windows-latest, goos: windows, goarch: amd64, ext: .exe, cgo: 1 }
-          - { os: macos-latest,   goos: darwin,  goarch: amd64,         cgo: 1 }
-          - { os: macos-latest,   goos: darwin,  goarch: arm64,         cgo: 1 }
-          - { os: ubuntu-latest,  goos: linux,   goarch: amd64,         cgo: 0 }
-          - { os: ubuntu-latest,  goos: linux,   goarch: arm64,         cgo: 0 }
+          - { os: windows-latest, goos: windows, goarch: amd64, ext: .exe, cgo: 1, gui_ldflag: "-H=windowsgui" }
+          - { os: macos-latest,   goos: darwin,  goarch: amd64,         cgo: 1, gui_ldflag: "" }
+          - { os: macos-latest,   goos: darwin,  goarch: arm64,         cgo: 1, gui_ldflag: "" }
+          - { os: ubuntu-latest,  goos: linux,   goarch: amd64,         cgo: 0, gui_ldflag: "" }
+          - { os: ubuntu-latest,  goos: linux,   goarch: arm64,         cgo: 0, gui_ldflag: "" }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -60,13 +60,56 @@ jobs:
           CGO_ENABLED: ${{ matrix.cgo }}
         run: |
           mkdir -p dist
-          go build -ldflags "-s -w -X cc2ws/internal/core.Version=${{ steps.ver.outputs.version }}" \
+          go build -ldflags "-s -w ${{ matrix.gui_ldflag }} -X cc2ws/internal/core.Version=${{ steps.ver.outputs.version }}" \
             -o "dist/cc2ws-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}" ./cmd/cc2ws
+      - name: Package windows zip
+        if: matrix.goos == 'windows'
+        shell: bash
+        run: cd dist && 7z a -tzip cc2ws-windows-amd64.zip cc2ws-windows-amd64.exe
+      - name: Package linux tarball
+        if: matrix.goos == 'linux'
+        shell: bash
+        run: |
+          cd dist
+          chmod +x cc2ws-linux-${{ matrix.goarch }}
+          cat > cc2ws.desktop <<'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=cc2ws
+          Exec=cc2ws
+          Terminal=false
+          Categories=Network;
+          EOF
+          tar -czf cc2ws-linux-${{ matrix.goarch }}.tar.gz cc2ws-linux-${{ matrix.goarch }} cc2ws.desktop
+      - name: Package macos .app bundle
+        if: matrix.goos == 'darwin'
+        shell: bash
+        run: |
+          VER="${{ steps.ver.outputs.version }}"
+          mkdir -p stage/cc2ws.app/Contents/MacOS stage/cc2ws.app/Contents/Resources
+          cp dist/cc2ws-darwin-${{ matrix.goarch }} stage/cc2ws.app/Contents/MacOS/cc2ws
+          chmod +x stage/cc2ws.app/Contents/MacOS/cc2ws
+          cat > stage/cc2ws.app/Contents/Info.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+          <key>CFBundleExecutable</key><string>cc2ws</string>
+          <key>CFBundleIdentifier</key><string>io.cc2ws.app</string>
+          <key>CFBundleName</key><string>cc2ws</string>
+          <key>CFBundleVersion</key><string>$VER</string>
+          <key>CFBundleShortVersionString</key><string>$VER</string>
+          <key>CFBundlePackageType</key><string>APPL</string>
+          <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          EOF
+          ( cd stage && ditto -c -k --keepParent cc2ws.app ../dist/cc2ws-darwin-${{ matrix.goarch }}.app.zip )
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
           name: cc2ws-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/cc2ws-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
+          path: dist/cc2ws-${{ matrix.goos }}-${{ matrix.goarch }}*
 
   publish:
     needs: build
@@ -99,7 +142,10 @@ jobs:
       - name: Compute checksums.txt
         run: |
           cd dist
-          sha256sum cc2ws-* | sort -k2 > checksums.txt
+          # Only the raw binaries (the self-updater downloads these by exact
+          # name and verifies against this file). Package archives are excluded.
+          sha256sum cc2ws-windows-amd64.exe cc2ws-linux-amd64 cc2ws-linux-arm64 \
+                    cc2ws-darwin-amd64 cc2ws-darwin-arm64 | sort -k2 > checksums.txt
           cat checksums.txt
       - name: Create release
         uses: softprops/action-gh-release@v2
