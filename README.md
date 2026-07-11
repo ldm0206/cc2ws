@@ -13,29 +13,100 @@ frames back to the client as HTTP SSE or JSON.
 
 ## Install
 
-Download a prebuilt binary from [Releases](/releases) (Windows / macOS /
-Linux, amd64 + arm64), or build from source:
+Download a prebuilt **raw binary** from
+[Releases](https://github.com/ldm0206/cc2ws/releases) — no archives, just the
+executable. Assets:
+
+| OS | Asset |
+|---|---|
+| Windows | `cc2ws-windows-amd64.exe` |
+| macOS (Intel) | `cc2ws-darwin-amd64` |
+| macOS (Apple silicon) | `cc2ws-darwin-arm64` |
+| Linux (amd64) | `cc2ws-linux-amd64` |
+| Linux (arm64) | `cc2ws-linux-arm64` |
+
+Each release also ships a `checksums.txt` (SHA256 of every asset); the in-app
+updater fetches it to verify downloads before applying.
+
+Builds are **unsigned**.
+
+### macOS first run
+
+Because the binary is unsigned, Gatekeeper quarantines it on first launch.
+Clear the attribute:
 
 ```bash
-go build -o cc2ws .
+xattr -d com.apple.quarantine cc2ws-darwin-*
 ```
 
+…or right-click → *Open* → *Open anyway* in Finder.
+
+### Build from source
+
+```bash
+go build -o cc2ws ./cmd/cc2ws          # Linux (pure Go, no cgo)
+CGO_ENABLED=1 go build -o cc2ws ./cmd/cc2ws   # Windows/macOS GUI (needs a C compiler)
+```
+
+The Windows/macOS build imports Fyne and requires cgo + a C compiler
+(`gcc`/`mingw-w64`). Linux builds are pure Go.
+
 ## Run
+
+The default mode is **headless** (no UI, stdout logs) — the same behavior as
+the original CLI, suitable for servers / SSH / CI. To open the native UI
+instead, pass `-headless=false` (or set `CC2WS_HEADLESS=false`).
 
 ```bash
 export UPSTREAM_BASE=https://hub.example.com   # or http://127.0.0.1:8090 locally
 export LISTEN=127.0.0.1:18080
-./cc2ws
+./cc2ws                                       # headless (default)
+./cc2ws -headless=false                       # open the native UI
+./cc2ws -version
 ```
 
 Flags mirror the env vars and win if both are set:
 
 ```bash
-./cc2ws -listen 127.0.0.1:18080 -upstream-base https://hub.example.com
-./cc2ws -version
+./cc2ws -listen 127.0.0.1:18080 -upstream-base https://hub.example.com -headless=false
 ```
 
+### Windows / macOS GUI (`-headless=false`)
+
+Opens a Fyne window with three tabs:
+
+- **Settings** — Upstream base, listen address, connect/idle timeouts, log
+  level, skip-TLS. *Save & Apply* validates, persists to `config.json`, and
+  hot-restarts the running proxy. *Start* / *Stop* control the server.
+- **Logs** — last 500 connection-log lines (info+).
+- **About** — version + in-app updater (see below).
+
+Closing the window stops the proxy and exits.
+
+### Linux TUI (`-headless=false`)
+
+An 80×24 [bubbletea](https://github.com/charmbracelet/bubbletea) TUI with the
+same three views: `[1]Settings [2]Logs [3]About`, plus `[s]`tart / `[x]`top /
+`[q]`uit. Use `-headless` (the default) for windowless servers / SSH.
+
+### In-app update (GUI & TUI)
+
+The **About** tab has a *Check for updates* action. It queries the latest
+GitHub Release, verifies the new binary's SHA256 against `checksums.txt`, then
+self-applies via [minio/selfupdate](https://github.com/minio/selfupdate).
+Checksum verification is **always** enforced before apply — there is no path
+that applies an unverified binary. After a successful apply, restart cc2ws to
+run the new version.
+
 ### Configuration
+
+Precedence (low → high): **defaults < `config.json` < env < flags.** The
+Settings UI persists to `UserConfigDir/cc2ws/config.json`
+(`%AppData%\cc2ws\config.json` on Windows,
+`~/Library/Application Support/cc2ws/config.json` on macOS,
+`$XDG_CONFIG_HOME/cc2ws/config.json` — or `~/.config/cc2ws/config.json` —
+on Linux); env vars and CLI flags still override it. The file is optional — a
+missing or corrupt file is silently ignored.
 
 | Env / Flag | Default | Description |
 |---|---|---|
@@ -45,6 +116,7 @@ Flags mirror the env vars and win if both are set:
 | `CONNECT_TIMEOUT` / `-connect-timeout` | `10s` | upstream WS dial timeout |
 | `IDLE_TIMEOUT` / `-idle-timeout` | `600s` | upstream WS per-read idle timeout |
 | `LOG_LEVEL` / `-log-level` | `info` | log level |
+| `CC2WS_HEADLESS` / `-headless` | `true` | `true` = no UI (servers/SSH/CI); `false` = open GUI/TUI |
 
 ## Routes
 
