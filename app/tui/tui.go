@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -84,11 +85,11 @@ func (m model) viewSettings() string {
 			"SETTINGS\n"+
 			"  Upstream base : %s\n"+
 			"  Listen        : %s\n"+
-			"  Connect/idle  : %s / %s   Level: %s\n"+
+			"  Connect/idle  : %ds / %ds   Level: %s\n"+
 			"  Skip TLS verify: %v\n\n"+
 			"[1]Settings [2]Logs [3]About  [s]Start/[x]Stop  [q]Quit",
 		core.Version, m.cfg.UpstreamBase, m.cfg.Listen,
-		m.cfg.ConnectTimeout, m.cfg.IdleTimeout, m.cfg.LogLevel,
+		int64(m.cfg.ConnectTimeout/time.Second), int64(m.cfg.IdleTimeout/time.Second), m.cfg.LogLevel,
 		m.cfg.InsecureSkipTLSVerify)
 }
 
