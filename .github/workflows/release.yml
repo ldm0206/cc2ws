@@ -1,8 +1,10 @@
 name: release
 
 # On every push to main: compute next version (minor+1), tag it, then a native
-# build matrix produces one raw binary per (os, arch), plus a combined
-# checksums.txt, published to a GitHub Release. No archives, no goreleaser.
+# build matrix produces one raw binary per (os, arch). The publish job downloads
+# all binaries, computes checksums.txt, and publishes a GitHub Release with raw
+# binaries (no archives). The in-app updater fetches checksums.txt to verify
+# SHA256 before self-applying.
 on:
   push:
     branches: [main]
@@ -55,24 +57,11 @@ jobs:
           mkdir -p dist
           go build -ldflags "-s -w -X cc2ws/internal/core.Version=${{ steps.ver.outputs.version }}" \
             -o "dist/cc2ws-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}" ./cmd/cc2ws
-      - name: Compute SHA256
-        id: sha
-        run: |
-          cd dist
-          file="cc2ws-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
-          sum=$(sha256sum "$file" | awk '{print $1}')
-          echo "${sum}  ${file}" >> checksums.txt
-          echo "sha=${sum}" >> "$GITHUB_OUTPUT"
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
           name: cc2ws-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/cc2ws-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
-      - name: Upload checksum line artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: checksums-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/checksums.txt
 
   publish:
     needs: build
@@ -97,16 +86,16 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag "${{ steps.ver.outputs.version }}"
           git push origin "${{ steps.ver.outputs.version }}"
-      - name: Download all artifacts
+      - name: Download all binaries
         uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
-      - name: Merge checksums.txt
+      - name: Compute checksums.txt
         run: |
           cd dist
-          cat checksums-*/checksums.txt | sort > checksums.txt
-          rm -rf checksums-*
+          sha256sum cc2ws-* | sort -k2 > checksums.txt
+          cat checksums.txt
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
