@@ -80,7 +80,7 @@ func (g *GuiFrontend) Run(ctx context.Context, h *core.Handle) error {
 	)
 
 	logsEntry := widget.NewMultiLineEntry()
-	logsEntry.SetReadOnly(true)
+	logsEntry.Disable()
 	logsTab := container.NewVBox(
 		widget.NewLabel("Connection logs"),
 		logsEntry,
