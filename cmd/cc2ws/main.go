@@ -31,7 +31,7 @@ func run(args []string) error {
 	skipTLSDefault, _ := strconv.ParseBool(envOr("UPSTREAM_INSECURE_SKIP_TLS_VERIFY", "false"))
 	insecureSkipTLSVerify := fs.Bool("insecure-skip-tls-verify", skipTLSDefault, "skip upstream TLS verify (debug only)")
 	logLevel := fs.String("log-level", envOr("LOG_LEVEL", "info"), "debug/info/warn/error")
-	headless := fs.Bool("headless", envOr("CC2WS_HEADLESS", "true") == "true", "run without UI (servers/SSH/CI)")
+	headless := fs.Bool("headless", envOr("CC2WS_HEADLESS", "false") == "true", "run without UI (servers/SSH/CI); default false so the GUI/TUI opens")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}

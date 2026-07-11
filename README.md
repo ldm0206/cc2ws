@@ -53,25 +53,25 @@ The Windows/macOS build imports Fyne and requires cgo + a C compiler
 
 ## Run
 
-The default mode is **headless** (no UI, stdout logs) — the same behavior as
-the original CLI, suitable for servers / SSH / CI. To open the native UI
-instead, pass `-headless=false` (or set `CC2WS_HEADLESS=false`).
+By default cc2ws opens its **native UI** — the Fyne GUI on Windows/macOS, the
+bubbletea TUI on Linux. Pass `-headless` (or set `CC2WS_HEADLESS=true`) for the
+windowless mode (stdout logs) used on servers / SSH / CI.
 
 ```bash
 export UPSTREAM_BASE=https://hub.example.com   # or http://127.0.0.1:8090 locally
 export LISTEN=127.0.0.1:18080
-./cc2ws                                       # headless (default)
-./cc2ws -headless=false                       # open the native UI
+./cc2ws                                         # native UI (default)
+./cc2ws -headless                               # windowless (servers/SSH/CI)
 ./cc2ws -version
 ```
 
 Flags mirror the env vars and win if both are set:
 
 ```bash
-./cc2ws -listen 127.0.0.1:18080 -upstream-base https://hub.example.com -headless=false
+./cc2ws -listen 127.0.0.1:18080 -upstream-base https://hub.example.com
 ```
 
-### Windows / macOS GUI (`-headless=false`)
+### Windows / macOS GUI (default)
 
 Opens a Fyne window with three tabs:
 
@@ -83,11 +83,11 @@ Opens a Fyne window with three tabs:
 
 Closing the window stops the proxy and exits.
 
-### Linux TUI (`-headless=false`)
+### Linux TUI (default)
 
 An 80×24 [bubbletea](https://github.com/charmbracelet/bubbletea) TUI with the
 same three views: `[1]Settings [2]Logs [3]About`, plus `[s]`tart / `[x]`top /
-`[q]`uit. Use `-headless` (the default) for windowless servers / SSH.
+`[q]`uit. Use `-headless` for windowless servers / SSH.
 
 ### In-app update (GUI & TUI)
 
@@ -116,7 +116,7 @@ missing or corrupt file is silently ignored.
 | `CONNECT_TIMEOUT` / `-connect-timeout` | `10s` | upstream WS dial timeout |
 | `IDLE_TIMEOUT` / `-idle-timeout` | `600s` | upstream WS per-read idle timeout |
 | `LOG_LEVEL` / `-log-level` | `info` | log level |
-| `CC2WS_HEADLESS` / `-headless` | `true` | `true` = no UI (servers/SSH/CI); `false` = open GUI/TUI |
+| `CC2WS_HEADLESS` / `-headless` | `false` | `true` = no UI (servers/SSH/CI); `false` (default) = open GUI/TUI |
 
 ## Routes
 
