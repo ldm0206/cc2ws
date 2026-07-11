@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - **Module path:** `cc2ws` (root `go.mod`, no rename).
-- **Go version:** 1.22 (do not bump).
+- **Go version:** 1.24 (floor). Originally 1.22, but `bubbletea@latest` (v1.3.10, pulled in Task 7) requires `go 1.24`; `fyne.io/fyne/v2@latest` (Task 8) has the same need. Bump accepted by user decision (2026-07-11); local toolchain is Go 1.26, CI uses `go-version-file: go.mod`. Do not bump further unless a dependency requires it.
 - **Existing proxy behavior must not change:** frame modes by route, `502`/`504` mapping, `idleConn` per-read timeout, auth-header allowlist (`Authorization`, `x-api-key`, `anthropic-version`, `anthropic-beta`, `OpenAI-Organization`, `OpenAI-Project`), multi-value header preservation. The refactor in Task 1 is mechanical and behavior-preserving.
 - **Auth keys are never stored or logged.** No key field in any settings UI; only auth *presence* (`auth=true/false`) is logged, exactly as `logging.go` does today.
 - **Config precedence (low→high):** defaults → config file (`os.UserConfigDir()/cc2ws/config.json`) → env → CLI flags. Flags win.
