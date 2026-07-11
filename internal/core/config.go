@@ -45,6 +45,21 @@ func swapScheme(base string) (string, error) {
 	return u.String(), nil
 }
 
+// DefaultConfig returns a usable Config with an empty upstream and sensible
+// defaults. Used on the GUI path when LoadConfig fails (e.g. a fresh install
+// with no UPSTREAM_BASE) so the window still opens and the user can fill in
+// the upstream on the Settings tab instead of the app exiting silently.
+func DefaultConfig() Config {
+	return Config{
+		Listen:         "127.0.0.1:18080",
+		UpstreamBase:   "",
+		UpstreamWS:     "",
+		ConnectTimeout: 10 * time.Second,
+		IdleTimeout:    600 * time.Second,
+		LogLevel:       "info",
+	}
+}
+
 func LoadConfig() (Config, error) {
 	fc := LoadFile()
 

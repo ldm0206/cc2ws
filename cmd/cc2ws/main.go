@@ -49,7 +49,14 @@ func run(args []string) error {
 
 	cfg, err := core.LoadConfig()
 	if err != nil {
-		return err
+		// Headless must fail fast — a server with no upstream is useless. The
+		// GUI path opens anyway with a default config so a fresh double-click
+		// (no UPSTREAM_BASE, no config file) still shows the window; the user
+		// fills in upstream on Settings and hits Save & Apply.
+		if *headless {
+			return err
+		}
+		cfg = core.DefaultConfig()
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
