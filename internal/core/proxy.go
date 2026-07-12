@@ -13,15 +13,26 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// authForwardHeaders is the allowlist forwarded on the upstream WS handshake.
-// Never logged by value (logging.go records presence only).
-var authForwardHeaders = []string{
-	"Authorization",
-	"x-api-key",
-	"anthropic-version",
-	"anthropic-beta",
-	"OpenAI-Organization",
-	"OpenAI-Project",
+// wsHandshakeHeaders are the hop-by-hop / WebSocket-protocol headers that
+// gorilla/websocket generates itself during the WS handshake. They must NOT be
+// copied through from the inbound request — re-sending them would corrupt the
+// handshake. Everything else is forwarded verbatim.
+var wsHandshakeHeaders = map[string]struct{}{
+	"Connection":          {},
+	"Keep-Alive":          {},
+	"Proxy-Authenticate":  {},
+	"Proxy-Authorization": {},
+	"Te":                  {},
+	"Trailers":            {},
+	"Transfer-Encoding":   {},
+	"Upgrade":             {},
+	"Host":                {},
+	"Content-Length":      {},
+	"Sec-Websocket-Key":       {},
+	"Sec-Websocket-Extensions": {},
+	"Sec-Websocket-Origin":     {},
+	"Sec-Websocket-Protocol":   {},
+	"Sec-Websocket-Version":    {},
 }
 
 // idleConn refreshes the read deadline before every ReadMessage so IDLE_TIMEOUT
@@ -140,15 +151,16 @@ func (c Config) upstreamURL(u *url.URL) string {
 	return out
 }
 
-// forwardHeaders copies the allowlisted request headers through to the upstream
-// WS handshake, preserving every value for keys that carry multiple (notably
-// anthropic-beta, which may legitimately carry several comma-separated values).
+// forwardHeaders copies every inbound request header through to the upstream WS
+// handshake except the hop-by-hop and WebSocket-protocol headers that gorilla
+// generates itself. Multi-value headers are preserved verbatim.
 func forwardHeaders(h http.Header) http.Header {
 	out := http.Header{}
-	for _, k := range authForwardHeaders {
-		if vals := h.Values(k); len(vals) > 0 {
-			out[http.CanonicalHeaderKey(k)] = vals
+	for k, vals := range h {
+		if _, skip := wsHandshakeHeaders[http.CanonicalHeaderKey(k)]; skip {
+			continue
 		}
+		out[k] = vals
 	}
 	return out
 }

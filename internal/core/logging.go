@@ -56,12 +56,7 @@ func withRequestLog(next http.Handler) http.Handler {
 }
 
 func hasAuth(h http.Header) bool {
-	for _, k := range authForwardHeaders {
-		if h.Get(k) != "" {
-			return true
-		}
-	}
-	return false
+	return h.Get("Authorization") != "" || h.Get("x-api-key") != ""
 }
 
 // setUpstream stashes the dialed upstream URL into the request log context.

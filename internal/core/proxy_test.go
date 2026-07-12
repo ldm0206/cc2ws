@@ -96,9 +96,11 @@ func TestProxyTypedJSONNonStreamEndToEnd(t *testing.T) {
 
 func TestProxyForwardsAuthHeaders(t *testing.T) {
 	gotAuth := make(chan string, 1)
+	gotCustom := make(chan string, 1)
 	up := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth <- r.Header.Get("Authorization") // capture before Upgrade
+		gotCustom <- r.Header.Get("X-Not-Forwarded")
 		c, err := up.Upgrade(w, r, nil)
 		if err != nil {
 			return
@@ -124,13 +126,22 @@ func TestProxyForwardsAuthHeaders(t *testing.T) {
 	resp.Body.Close()
 
 	select {
-	case a := <-gotAuth:
-		if a != "Bearer secret" {
-			t.Errorf("upstream got Authorization=%q want 'Bearer secret'", a)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("upstream never received request")
+case a := <-gotAuth:
+	if a != "Bearer secret" {
+		t.Errorf("upstream got Authorization=%q want 'Bearer secret'", a)
 	}
+case <-time.After(time.Second):
+	t.Fatal("upstream never received request")
+}
+
+	select {
+case c := <-gotCustom:
+	if c != "nope" {
+		t.Errorf("upstream got X-Not-Forwarded=%q want 'nope' (all non-WS headers must forward)", c)
+	}
+case <-time.After(time.Second):
+	t.Fatal("upstream never received request")
+}
 }
 
 func TestProxyDialFailureReturns502(t *testing.T) {
