@@ -20,6 +20,8 @@ type Config struct {
 	ConnectTimeout        time.Duration
 	IdleTimeout           time.Duration
 	LogLevel              string
+	Language              string // "zh" (default) | "en"
+	AutoStart             bool
 }
 
 // normalizeUpstream parses an upstream origin given as http(s):// or ws(s)://
@@ -75,6 +77,7 @@ func DefaultConfig() Config {
 		ConnectTimeout: 10 * time.Second,
 		IdleTimeout:    600 * time.Second,
 		LogLevel:       "info",
+		Language:       "zh",
 	}
 }
 
@@ -103,6 +106,12 @@ func LoadConfig() (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("UPSTREAM_INSECURE_SKIP_TLS_VERIFY: %w", err)
 	}
+	lang := envOr("CC2WS_LANG", pickStr(fc.Language, "zh"))
+	autoStart, err := strconv.ParseBool(envOr("CC2WS_AUTOSTART",
+		boolToStr(pickBool(fc.AutoStart, false))))
+	if err != nil {
+		return Config{}, fmt.Errorf("CC2WS_AUTOSTART: %w", err)
+	}
 	return Config{
 		Listen:                envOr("LISTEN", pickStr(fc.Listen, "127.0.0.1:18080")),
 		UpstreamBase:          nb,
@@ -111,6 +120,8 @@ func LoadConfig() (Config, error) {
 		ConnectTimeout:        ct,
 		IdleTimeout:           it,
 		LogLevel:              envOr("LOG_LEVEL", pickStr(fc.LogLevel, "info")),
+		Language:              lang,
+		AutoStart:             autoStart,
 	}, nil
 }
 
@@ -149,6 +160,8 @@ type fileConfig struct {
 	ConnectTimeout        *string `json:"connect_timeout,omitempty"`
 	IdleTimeout           *string `json:"idle_timeout,omitempty"`
 	LogLevel              *string `json:"log_level,omitempty"`
+	Language              *string `json:"language,omitempty"`
+	AutoStart             *bool   `json:"autostart,omitempty"`
 }
 
 // LoadFile reads config.json. Returns a zero fileConfig (no fields set) if the
@@ -190,6 +203,8 @@ func SaveConfig(cfg Config) error {
 		ConnectTimeout:        &ct,
 		IdleTimeout:           &it,
 		LogLevel:              &cfg.LogLevel,
+		Language:              &cfg.Language,
+		AutoStart:             &cfg.AutoStart,
 	}
 	b, err := json.MarshalIndent(fc, "", "  ")
 	if err != nil {
@@ -228,6 +243,14 @@ func Validate(cfg Config) error {
 	if _, err := swapScheme(cfg.UpstreamBase); err != nil {
 		return err
 	}
+	if cfg.Language == "" {
+		cfg.Language = "zh"
+	}
+	switch cfg.Language {
+	case "zh", "en":
+	default:
+		return fmt.Errorf("invalid language %q (want zh or en)", cfg.Language)
+	}
 	if cfg.ConnectTimeout <= 0 {
 		return fmt.Errorf("connect timeout must be > 0")
 	}
@@ -245,7 +268,7 @@ func Validate(cfg Config) error {
 // BuildConfigFromStrings parses the GUI form's string fields into a validated
 // Config (computing UpstreamWS). Pure — no Fyne — so it's testable on every
 // platform without a C compiler.
-func BuildConfigFromStrings(upstream, listen, ct, it, level string, skipTLS bool) (Config, error) {
+func BuildConfigFromStrings(upstream, listen, ct, it, level, language string, skipTLS, autoStart bool) (Config, error) {
 	ctd, err := time.ParseDuration(ct)
 	if err != nil {
 		return Config{}, fmt.Errorf("connect timeout: %w", err)
@@ -266,6 +289,8 @@ func BuildConfigFromStrings(upstream, listen, ct, it, level string, skipTLS bool
 		ConnectTimeout:        ctd,
 		IdleTimeout:           itd,
 		LogLevel:              level,
+		Language:              language,
+		AutoStart:             autoStart,
 	}
 	if err := Validate(cfg); err != nil {
 		return cfg, err

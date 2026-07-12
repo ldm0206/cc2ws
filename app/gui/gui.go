@@ -52,7 +52,7 @@ func (g *GuiFrontend) Run(ctx context.Context, h *core.Handle) error {
 		status.SetText("Stopped")
 	})
 	saveBtn := widget.NewButton("Save & Apply", func() {
-		newCfg, err := core.BuildConfigFromStrings(upstream.Text, listen.Text, ct.Text, it.Text, level.Selected, skipTLS.Checked)
+		newCfg, err := core.BuildConfigFromStrings(upstream.Text, listen.Text, ct.Text, it.Text, level.Selected, h.Config().Language, skipTLS.Checked, h.Config().AutoStart)
 		if err != nil {
 			status.SetText("Invalid: " + err.Error())
 			return

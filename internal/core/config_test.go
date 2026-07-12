@@ -182,6 +182,44 @@ func TestConfigPath(t *testing.T) {
 	}
 }
 
+func TestLanguageDefaultAndPersist(t *testing.T) {
+	t.Setenv("CC2WS_CONFIG_DIR", t.TempDir())
+	cfg := DefaultConfig()
+	if cfg.Language != "zh" {
+		t.Fatalf("Default Language = %q, want zh", cfg.Language)
+	}
+	cfg.UpstreamBase = "https://hub.example.com"
+	cfg.Language = "en"
+	cfg.AutoStart = true
+	if err := SaveConfig(cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	t.Setenv("UPSTREAM_BASE", cfg.UpstreamBase)
+	got, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if got.Language != "en" {
+		t.Fatalf("Language = %q, want en", got.Language)
+	}
+	if !got.AutoStart {
+		t.Fatalf("AutoStart = false, want true")
+	}
+}
+
+func TestValidateRejectsBadLanguage(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.UpstreamBase = "https://hub.example.com"
+	cfg.Language = "fr"
+	if err := Validate(cfg); err == nil {
+		t.Fatalf("Validate accepted fr")
+	}
+	cfg.Language = ""
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("Validate(empty lang) should normalize+accept, got: %v", err)
+	}
+}
+
 func TestValidate(t *testing.T) {
 	good := Config{UpstreamBase: "https://hub.example.com", ConnectTimeout: 10 * time.Second, IdleTimeout: 600 * time.Second, LogLevel: "info"}
 	if err := Validate(good); err != nil {
@@ -219,7 +257,7 @@ func TestBuildConfigFromStrings(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			cfg, err := BuildConfigFromStrings(c.upstream, c.listen, c.ct, c.it, c.level, c.skipTLS)
+			cfg, err := BuildConfigFromStrings(c.upstream, c.listen, c.ct, c.it, c.level, "zh", c.skipTLS, false)
 			if (err != nil) != c.wantErr {
 				t.Fatalf("err=%v wantErr=%v", err, c.wantErr)
 			}
