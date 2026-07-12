@@ -22,27 +22,45 @@ type Config struct {
 	LogLevel              string
 }
 
-func swapScheme(base string) (string, error) {
-	u, err := url.Parse(base)
+// normalizeUpstream parses an upstream origin given as http(s):// or ws(s)://
+// and returns (base, ws): base is always an http/https origin (what we store
+// and display), ws is the ws/wss URL the proxy dials. Path/query/fragment are
+// stripped from both — the proxy appends the request path at dial time.
+func normalizeUpstream(in string) (base, ws string, err error) {
+	u, err := url.Parse(in)
 	if err != nil {
-		return "", fmt.Errorf("parse upstream base: %w", err)
+		return "", "", fmt.Errorf("parse upstream base: %w", err)
 	}
 	switch u.Scheme {
-	case "https":
+	case "https", "wss":
 		u.Scheme = "wss"
-	case "http":
+	case "http", "ws":
 		u.Scheme = "ws"
 	default:
-		return "", fmt.Errorf("upstream base must be http(s)://, got scheme %q", u.Scheme)
+		return "", "", fmt.Errorf("upstream base must be http(s):// or ws(s)://, got scheme %q", u.Scheme)
 	}
 	if u.Host == "" {
-		return "", fmt.Errorf("upstream base missing host")
+		return "", "", fmt.Errorf("upstream base missing host")
 	}
 	u.Path = ""
 	u.RawPath = ""
 	u.RawQuery = ""
 	u.Fragment = ""
-	return u.String(), nil
+	ws = u.String()
+	switch u.Scheme {
+	case "wss":
+		u.Scheme = "https"
+	case "ws":
+		u.Scheme = "http"
+	}
+	return u.String(), ws, nil
+}
+
+// swapScheme returns just the WebSocket URL for base. Kept as a thin wrapper
+// over normalizeUpstream so existing callers and tests compile unchanged.
+func swapScheme(base string) (string, error) {
+	_, ws, err := normalizeUpstream(base)
+	return ws, err
 }
 
 // DefaultConfig returns a usable Config with an empty upstream and sensible
@@ -68,7 +86,7 @@ func LoadConfig() (Config, error) {
 	if base == "" {
 		return Config{}, fmt.Errorf("UPSTREAM_BASE is required")
 	}
-	ws, err := swapScheme(base)
+	nb, ws, err := normalizeUpstream(base)
 	if err != nil {
 		return Config{}, err
 	}
@@ -87,7 +105,7 @@ func LoadConfig() (Config, error) {
 	}
 	return Config{
 		Listen:                envOr("LISTEN", pickStr(fc.Listen, "127.0.0.1:18080")),
-		UpstreamBase:          base,
+		UpstreamBase:          nb,
 		UpstreamWS:            ws,
 		InsecureSkipTLSVerify: skip,
 		ConnectTimeout:        ct,
@@ -236,13 +254,13 @@ func BuildConfigFromStrings(upstream, listen, ct, it, level string, skipTLS bool
 	if err != nil {
 		return Config{}, fmt.Errorf("idle timeout: %w", err)
 	}
-	ws, err := swapScheme(upstream)
+	nb, ws, err := normalizeUpstream(upstream)
 	if err != nil {
 		return Config{}, err
 	}
 	cfg := Config{
 		Listen:                listen,
-		UpstreamBase:          upstream,
+		UpstreamBase:          nb,
 		UpstreamWS:            ws,
 		InsecureSkipTLSVerify: skipTLS,
 		ConnectTimeout:        ctd,

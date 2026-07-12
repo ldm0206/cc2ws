@@ -115,13 +115,15 @@ func (h *Handle) Stop() error {
 // UpstreamWS is always recomputed from UpstreamBase so a caller that leaves
 // UpstreamWS empty or stale cannot break the proxy after a hot-restart.
 func (h *Handle) SetConfig(cfg Config) error {
-	// Validate: reuse swapScheme to check the upstream origin. Fix 2: also
-	// store the resulting WebSocket URL onto cfg.UpstreamWS so callers that
-	// pass an empty/stale UpstreamWS cannot break the proxy after hot-restart.
-	ws, err := swapScheme(cfg.UpstreamBase)
+	// Validate: normalize the upstream (accepts http/https/ws/wss, stores an
+	// http/https origin). Fix 2: store the resulting base + WebSocket URL onto
+	// cfg so callers that pass an empty/stale UpstreamWS cannot break the
+	// proxy after hot-restart.
+	nb, ws, err := normalizeUpstream(cfg.UpstreamBase)
 	if err != nil {
 		return err
 	}
+	cfg.UpstreamBase = nb
 	cfg.UpstreamWS = ws
 	if err := Validate(cfg); err != nil {
 		return err

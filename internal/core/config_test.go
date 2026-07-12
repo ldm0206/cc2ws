@@ -33,6 +33,43 @@ func TestSwapSchemeInvalid(t *testing.T) {
 	}
 }
 
+func TestSwapSchemeAcceptsWS(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"wss://hub.example.com", "wss://hub.example.com"},
+		{"ws://127.0.0.1:8090", "ws://127.0.0.1:8090"},
+		{"wss://hub.example.com:8443/v1", "wss://hub.example.com:8443"},
+	}
+	for _, c := range cases {
+		got, err := swapScheme(c.in)
+		if err != nil {
+			t.Errorf("swapScheme(%q) error: %v", c.in, err)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("swapScheme(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestNormalizeUpstream(t *testing.T) {
+	cases := []struct{ in, wantBase, wantWS string }{
+		{"wss://hub.example.com", "https://hub.example.com", "wss://hub.example.com"},
+		{"ws://hub.example.com", "http://hub.example.com", "ws://hub.example.com"},
+		{"https://hub.example.com", "https://hub.example.com", "wss://hub.example.com"},
+		{"http://hub.example.com", "http://hub.example.com", "ws://hub.example.com"},
+		{"wss://hub.example.com:8443/v1", "https://hub.example.com:8443", "wss://hub.example.com:8443"},
+	}
+	for _, c := range cases {
+		base, ws, err := normalizeUpstream(c.in)
+		if err != nil {
+			t.Fatalf("normalizeUpstream(%q): %v", c.in, err)
+		}
+		if base != c.wantBase || ws != c.wantWS {
+			t.Errorf("normalizeUpstream(%q) = (%q,%q), want (%q,%q)", c.in, base, ws, c.wantBase, c.wantWS)
+		}
+	}
+}
+
 func TestLoadConfigRequiresUpstream(t *testing.T) {
 	t.Setenv("CC2WS_CONFIG_DIR", t.TempDir())
 	t.Setenv("UPSTREAM_BASE", "")
