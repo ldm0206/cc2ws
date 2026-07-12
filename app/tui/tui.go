@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"cc2ws/internal/core"
+	"cc2ws/internal/i18n"
 )
 
 // TuiFrontend is the app.Frontend for linux.
@@ -82,32 +83,43 @@ func (m model) View() string {
 func (m model) viewSettings() string {
 	return fmt.Sprintf(
 		"cc2ws %s\n\n"+
-			"SETTINGS\n"+
-			"  Upstream base : %s\n"+
-			"  Listen        : %s\n"+
-			"  Connect/idle  : %ds / %ds   Level: %s\n"+
-			"  Skip TLS verify: %v\n\n"+
-			"[1]Settings [2]Logs [3]About  [s]Start/[x]Stop  [q]Quit",
-		core.Version, m.cfg.UpstreamBase, m.cfg.Listen,
-		int64(m.cfg.ConnectTimeout/time.Second), int64(m.cfg.IdleTimeout/time.Second), m.cfg.LogLevel,
-		m.cfg.InsecureSkipTLSVerify)
+			"%s\n"+
+			"  %s : %s\n"+
+			"  %s : %s\n"+
+			"  %s / %s   %s: %s\n"+
+			"  %s: %v\n\n"+
+			"[1]%s [2]%s [3]%s  [s]%s/[x]%s  [q]Quit",
+		core.Version,
+		i18n.T("settings"),
+		i18n.T("upstream_base"), m.cfg.UpstreamBase,
+		i18n.T("listen_addr"), m.cfg.Listen,
+		fmt.Sprintf("%ds", int64(m.cfg.ConnectTimeout/time.Second)),
+		fmt.Sprintf("%ds", int64(m.cfg.IdleTimeout/time.Second)),
+		i18n.T("log_level"), m.cfg.LogLevel,
+		i18n.T("skip_tls"), m.cfg.InsecureSkipTLSVerify,
+		i18n.T("settings"), i18n.T("logs"), i18n.T("about"),
+		i18n.T("start"), i18n.T("stop"))
 }
 
 func (m model) viewLogs() string {
 	var b strings.Builder
-	b.WriteString("CONNECTION LOGS\n\n")
+	b.WriteString(i18n.T("conn_logs") + "\n\n")
 	for _, e := range m.logs {
 		if e.Level < m.levelMin {
 			continue
 		}
 		fmt.Fprintf(&b, "%s %s\n", e.Time.Format("15:04:05"), e.Msg)
 	}
-	b.WriteString("\n[f]Filter  [c]Clear  [1]Settings [2]Logs [3]About [q]Quit")
+	b.WriteString("\n[f]" + i18n.T("filter") + "  [c]" + i18n.T("clear") + "  [1]" + i18n.T("settings") + " [2]" + i18n.T("logs") + " [3]" + i18n.T("about") + " [q]Quit")
 	return b.String()
 }
 
 func (m model) viewAbout() string {
-	return fmt.Sprintf("cc2ws %s\n\nABOUT\n  Current: %s\n\n[u]Check update  [q]Quit", core.Version, core.Version)
+	return fmt.Sprintf("cc2ws %s\n\n%s\n  %s: %s\n\n[u]%s  [q]Quit",
+		core.Version,
+		i18n.T("about"),
+		i18n.T("current_version"), core.Version,
+		i18n.T("check_update"))
 }
 
 func (m model) Init() tea.Cmd { return nil }

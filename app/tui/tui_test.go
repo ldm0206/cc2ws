@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"cc2ws/internal/core"
+	"cc2ws/internal/i18n"
 )
 
 func defaultCfg() core.Config {
@@ -62,5 +63,19 @@ func TestLogEntryAppended(t *testing.T) {
 	m = mm.(model)
 	if !strings.Contains(m.View(), "POST /v1/messages 200") {
 		t.Error("logs View() should show the appended log line")
+	}
+}
+
+func TestTUIRespectsLanguage(t *testing.T) {
+	defer i18n.SetLang(i18n.Default)
+	i18n.SetLang(i18n.ZH)
+	zhView := newModel(defaultCfg(), nil).viewSettings()
+	if !strings.Contains(zhView, "上游") {
+		t.Fatalf("zh view missing 上游, got:\n%s", zhView)
+	}
+	i18n.SetLang(i18n.EN)
+	enView := newModel(defaultCfg(), nil).viewSettings()
+	if !strings.Contains(enView, "Upstream base") {
+		t.Fatalf("en view missing 'Upstream base', got:\n%s", enView)
 	}
 }
