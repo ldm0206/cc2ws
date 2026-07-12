@@ -62,11 +62,6 @@ func newProxyHandler(cfg Config, mode FrameMode) http.HandlerFunc {
 			writeProxyError(w, http.StatusBadRequest, "read request body failed: "+err.Error())
 			return
 		}
-		if !json.Valid(body) {
-			writeProxyError(w, http.StatusBadRequest, "invalid json body")
-			return
-		}
-		stream := detectStream(body, mode)
 		upURL := cfg.upstreamURL(r.URL)
 		setUpstream(r.Context(), upURL)
 
@@ -102,9 +97,9 @@ func newProxyHandler(cfg Config, mode FrameMode) http.HandlerFunc {
 		var pumpErr error
 		switch mode {
 		case FrameModeTypedJSON:
-			pumpErr = pumpTypedJSON(w, reader, stream)
+			pumpErr = pumpTypedJSON(w, reader, true)
 		default:
-			pumpErr = pumpSSEBytes(w, reader, stream)
+			pumpErr = pumpSSEBytes(w, reader, true)
 		}
 		if pumpErr != nil {
 			if errors.Is(pumpErr, errReadTimeout) {
@@ -127,20 +122,6 @@ func newProxyHandler(cfg Config, mode FrameMode) http.HandlerFunc {
 			}
 		}
 	}
-}
-
-// detectStream reads only the top-level "stream" field (body is not mutated).
-// Responses default to streaming (the WS is itself an event stream); chat/messages
-// default off. An explicit stream field always wins.
-func detectStream(body []byte, mode FrameMode) bool {
-	var probe struct {
-		Stream *bool `json:"stream"`
-	}
-	_ = json.Unmarshal(body, &probe)
-	if probe.Stream != nil {
-		return *probe.Stream
-	}
-	return mode == FrameModeTypedJSON
 }
 
 func (c Config) upstreamURL(u *url.URL) string {

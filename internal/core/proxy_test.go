@@ -71,7 +71,7 @@ func TestProxySSEBytesStreamEndToEnd(t *testing.T) {
 	}
 }
 
-func TestProxyTypedJSONNonStreamEndToEnd(t *testing.T) {
+func TestProxyTypedJSONStreamEndToEnd(t *testing.T) {
 	upstream := startStubUpstream(t, func(c *websocket.Conn, body []byte) {
 		_ = c.WriteMessage(websocket.TextMessage, []byte(`{"type":"response.created"}`))
 		_ = c.WriteMessage(websocket.TextMessage, []byte(`{"type":"response.completed","response":{"id":"r1"}}`))
@@ -161,6 +161,10 @@ func TestProxyDialFailureReturns502(t *testing.T) {
 }
 
 func TestProxyInvalidJSONReturns400(t *testing.T) {
+	// Body is now forwarded verbatim with no JSON validation; a non-JSON body
+	// is still read and sent upstream. The dial here targets an unreachable
+	// port, so the proxy surfaces a 502 — proving the body was not rejected
+	// locally as 400.
 	srv := httptest.NewServer(newProxyHandler(testCfg("ws://127.0.0.1:1"), FrameModeSSEBytes))
 	t.Cleanup(srv.Close)
 
@@ -170,8 +174,8 @@ func TestProxyInvalidJSONReturns400(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != 400 {
-		t.Errorf("status=%d want 400", resp.StatusCode)
+	if resp.StatusCode != 502 {
+		t.Errorf("status=%d want 502 (non-JSON body must forward, not 400)", resp.StatusCode)
 	}
 }
 
@@ -240,25 +244,5 @@ func TestProxyForwardsMultiValueHeader(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("upstream never received request")
-	}
-}
-
-func TestDetectStream(t *testing.T) {
-	cases := []struct {
-		body []byte
-		mode FrameMode
-		want bool
-	}{
-		{[]byte(`{"stream":true}`), FrameModeSSEBytes, true},
-		{[]byte(`{"stream":false}`), FrameModeSSEBytes, false},
-		{[]byte(`{}`), FrameModeSSEBytes, false}, // chat defaults off
-		{[]byte(`{}`), FrameModeTypedJSON, true}, // responses default on
-		{[]byte(`{"stream":false}`), FrameModeTypedJSON, false},
-	}
-	for i, c := range cases {
-		got := detectStream(c.body, c.mode)
-		if got != c.want {
-			t.Errorf("case %d: detectStream=%v want %v", i, got, c.want)
-		}
 	}
 }
