@@ -22,6 +22,7 @@ type Config struct {
 	LogLevel              string
 	Language              string // "zh" (default) | "en"
 	AutoStart             bool
+	ThemeMode             string // "dark" (default) | "light"
 }
 
 // normalizeUpstream parses an upstream origin given as http(s):// or ws(s)://
@@ -78,6 +79,7 @@ func DefaultConfig() Config {
 		IdleTimeout:    600 * time.Second,
 		LogLevel:       "info",
 		Language:       "zh",
+		ThemeMode:      "dark",
 	}
 }
 
@@ -112,6 +114,7 @@ func LoadConfig() (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("CC2WS_AUTOSTART: %w", err)
 	}
+	themeMode := envOr("CC2WS_THEME", pickStr(fc.ThemeMode, "dark"))
 	return Config{
 		Listen:                envOr("LISTEN", pickStr(fc.Listen, "127.0.0.1:18080")),
 		UpstreamBase:          nb,
@@ -122,6 +125,7 @@ func LoadConfig() (Config, error) {
 		LogLevel:              envOr("LOG_LEVEL", pickStr(fc.LogLevel, "info")),
 		Language:              lang,
 		AutoStart:             autoStart,
+		ThemeMode:             themeMode,
 	}, nil
 }
 
@@ -162,6 +166,7 @@ type fileConfig struct {
 	LogLevel              *string `json:"log_level,omitempty"`
 	Language              *string `json:"language,omitempty"`
 	AutoStart             *bool   `json:"autostart,omitempty"`
+	ThemeMode             *string `json:"theme_mode,omitempty"`
 }
 
 // LoadFile reads config.json. Returns a zero fileConfig (no fields set) if the
@@ -205,6 +210,7 @@ func SaveConfig(cfg Config) error {
 		LogLevel:              &cfg.LogLevel,
 		Language:              &cfg.Language,
 		AutoStart:             &cfg.AutoStart,
+		ThemeMode:             &cfg.ThemeMode,
 	}
 	b, err := json.MarshalIndent(fc, "", "  ")
 	if err != nil {
@@ -251,6 +257,14 @@ func Validate(cfg Config) error {
 	default:
 		return fmt.Errorf("invalid language %q (want zh or en)", cfg.Language)
 	}
+	if cfg.ThemeMode == "" {
+		cfg.ThemeMode = "dark"
+	}
+	switch cfg.ThemeMode {
+	case "dark", "light":
+	default:
+		return fmt.Errorf("invalid theme_mode %q (want dark or light)", cfg.ThemeMode)
+	}
 	if cfg.ConnectTimeout <= 0 {
 		return fmt.Errorf("connect timeout must be > 0")
 	}
@@ -268,7 +282,7 @@ func Validate(cfg Config) error {
 // BuildConfigFromStrings parses the GUI form's string fields into a validated
 // Config (computing UpstreamWS). Pure — no Fyne — so it's testable on every
 // platform without a C compiler.
-func BuildConfigFromStrings(upstream, listen, ct, it, level, language string, skipTLS, autoStart bool) (Config, error) {
+func BuildConfigFromStrings(upstream, listen, ct, it, level, language, themeMode string, skipTLS, autoStart bool) (Config, error) {
 	ctd, err := time.ParseDuration(ct)
 	if err != nil {
 		return Config{}, fmt.Errorf("connect timeout: %w", err)
@@ -291,6 +305,7 @@ func BuildConfigFromStrings(upstream, listen, ct, it, level, language string, sk
 		LogLevel:              level,
 		Language:              language,
 		AutoStart:             autoStart,
+		ThemeMode:             themeMode,
 	}
 	if err := Validate(cfg); err != nil {
 		return cfg, err

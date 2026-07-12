@@ -10,6 +10,12 @@ const (
 	idSkipTLS         = "skip_tls"
 	idAutostart       = "autostart"
 	idLanguage        = "language"
+	idThemeMode       = "theme_mode"
+	idThemeLight      = "theme_light"
+	idThemeDark       = "theme_dark"
+	idConnSection     = "conn_section"
+	idAppearanceSec   = "appearance_section"
+	idLaunchSection   = "launch_section"
 	idStart           = "start"
 	idStop            = "stop"
 	idSaveApply       = "save_apply"
@@ -42,6 +48,12 @@ var zh = map[string]string{
 	idSkipTLS:         "跳过上游 TLS 校验（仅调试）",
 	idAutostart:       "开机自启",
 	idLanguage:        "语言",
+	idThemeMode:       "主题",
+	idThemeLight:      "浅色",
+	idThemeDark:       "深色",
+	idConnSection:     "连接配置",
+	idAppearanceSec:   "外观",
+	idLaunchSection:   "启动",
 	idStart:           "启动",
 	idStop:            "停止",
 	idSaveApply:       "保存并应用",
@@ -74,6 +86,12 @@ var en = map[string]string{
 	idSkipTLS:         "Skip upstream TLS verify (debug only)",
 	idAutostart:       "Launch at login",
 	idLanguage:        "Language",
+	idThemeMode:       "Theme",
+	idThemeLight:      "Light",
+	idThemeDark:       "Dark",
+	idConnSection:     "Connection",
+	idAppearanceSec:   "Appearance",
+	idLaunchSection:   "Startup",
 	idStart:           "Start",
 	idStop:            "Stop",
 	idSaveApply:       "Save & Apply",

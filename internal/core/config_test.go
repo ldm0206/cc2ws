@@ -220,6 +220,19 @@ func TestValidateRejectsBadLanguage(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsBadThemeMode(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.UpstreamBase = "https://hub.example.com"
+	cfg.ThemeMode = "hot-pink"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("Validate accepted bad theme_mode")
+	}
+	cfg.ThemeMode = ""
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("Validate(empty theme) should normalize+accept, got: %v", err)
+	}
+}
+
 func TestValidate(t *testing.T) {
 	good := Config{UpstreamBase: "https://hub.example.com", ConnectTimeout: 10 * time.Second, IdleTimeout: 600 * time.Second, LogLevel: "info"}
 	if err := Validate(good); err != nil {
@@ -257,7 +270,7 @@ func TestBuildConfigFromStrings(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			cfg, err := BuildConfigFromStrings(c.upstream, c.listen, c.ct, c.it, c.level, "zh", c.skipTLS, false)
+			cfg, err := BuildConfigFromStrings(c.upstream, c.listen, c.ct, c.it, c.level, "zh", "dark", c.skipTLS, false)
 			if (err != nil) != c.wantErr {
 				t.Fatalf("err=%v wantErr=%v", err, c.wantErr)
 			}
