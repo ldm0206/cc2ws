@@ -26,7 +26,7 @@ The fix rewrites the Windows/macOS GUI from Fyne to **Gio** (immediate-mode, pur
 | Autostart scope | **All three platforms** | Win registry Run key, macOS LaunchAgent, Linux XDG `.desktop`. |
 | i18n mechanism | **Zero-dep map table** | ~40 strings; `go-i18n` + toml/json is unjustified weight. |
 | Gio state model | **Pull-per-frame** | UI reads `h.Config()`/`h.Running()` each frame; background goroutines call `w.Invalidate()` on change. Idiomatic Gio; thinnest binding to the existing `core.Handle`. |
-| CJK font | **`go:embed` a CJK font** (Noto Sans SC or LXGW WenKai) registered as Gio theme default | Chinese renders everywhere; binary +5–8MB, acceptable for a desktop GUI. |
+| CJK font | **`go:embed` Noto Sans SC Regular**, registered as Gio theme default | OFL-licensed, the de-facto CJK standard, renders cleanly at small sizes. Chinese renders everywhere; binary +~6MB, acceptable for a desktop GUI. (LXGW WenKai is the fallback only if Noto's size proves a problem at build time.) |
 
 ## Platform matrix (unchanged from v0.3, framework updated)
 
@@ -107,7 +107,11 @@ Per-platform registration:
 
 Config stores the *intent* (`AutoStart bool`). On startup the GUI calls `autostart.EnableIfWanted(cfg.AutoStart)` to re-sync if the user deleted the OS entry out-of-band. Toggling the checkbox calls `EnableIfWanted` immediately and reports any error inline; on success it persists `AutoStart` via `SetConfig`.
 
-Path resolution uses `os.Executable()` (resolves symlinks). Home/config dirs use `os.UserConfigDir()` / `os.UserHomeDir()`, overridable by `CC2WS_CONFIG_DIR` in tests (same pattern as `core.configDir`).
+Path resolution uses `os.Executable()` (resolves symlinks). Target dirs resolve through small unexported helpers so tests can redirect them:
+
+- **darwin**: launch-agent dir = `<home>/Library/LaunchAgents`; `<home>` from `os.UserHomeDir()`, overridable in tests by `CC2WS_HOME_DIR`.
+- **linux**: autostart dir = `<config>/autostart`; `<config>` from `os.UserConfigDir()`, overridable by the existing `CC2WS_CONFIG_DIR` seam.
+- **windows**: the registry key `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` is fixed (no path to redirect); tests exercise the real `HKCU` hive (per-user, safe in CI) and clean up via `Disable`.
 
 ## Subsystem: i18n + CJK font
 
@@ -130,7 +134,7 @@ func T(key string) string   // returns current-lang string; falls back to zh, th
 
 ### CJK font (GUI only)
 
-`app/gui/assets/` holds an embedded CJK font (Noto Sans SC Regular or LXGW WenKai — chosen for open license + clean rendering at small sizes). `theme.go` registers it via Gio's `text` font registry and sets it as the `material.Theme` default. Chinese renders on Windows and macOS without relying on system CJK fonts. The TUI needs no font (it uses the terminal's fonts, which already handle CJK).
+`app/gui/assets/` holds an embedded **Noto Sans SC Regular** font (OFL). `theme.go` registers it via Gio's `text` font registry and sets it as the `material.Theme` default. Chinese renders on Windows and macOS without relying on system CJK fonts. The TUI needs no font (it uses the terminal's fonts, which already handle CJK).
 
 ## Subsystem: config extension (`core/config.go`)
 
@@ -238,7 +242,7 @@ Unchanged philosophy, extended to the new surfaces:
 
 - **`core/config`**: extend `config_test` with `swapScheme` cases for `ws://`/`wss://` input (UpstreamWS + normalized base asserted); config round-trip with `Language`/`AutoStart`; `Validate` accepts `zh`/`en`, rejects others, normalizes empty → `zh`.
 - **`i18n`**: `T()` returns the right lang after `SetLang`; missing key falls back zh → key; default lang is zh.
-- **`autostart`**: inject a temp config/home dir (reuse `CC2WS_CONFIG_DIR` + a new `CC2WS_HOME_DIR` test seam), then assert `Disable`→`Enable`→`IsEnabled` round-trip and the generated plist/registry-value/desktop file shape (paths, `RunAtLoad`/`Exec`/value-data correct). No real OS writes hit.
+- **`autostart`**: **darwin/linux** — point the seam (`CC2WS_HOME_DIR` / `CC2WS_CONFIG_DIR`) at a temp dir and assert `Disable`→`Enable`→`IsEnabled` round-trip plus the generated plist/desktop file shape (`RunAtLoad`/`Exec`/paths correct); no real OS locations are touched. **windows** — exercise the real `HKCU\...\Run` hive (per-user, safe in CI): `Enable` writes the value, `IsEnabled` reads it back and compares the path, `Disable` removes it; the test cleans up with `Disable` in a deferred step.
 - **GUI**: thin; verified manually on Windows + macOS (Gio is hard to unit-test). Relies on `core` tests for correctness.
 - **TUI**: extend `tui_test` to assert `i18n.T` is wired (strings change with `SetLang`).
 - **CI** runs the full suite on the 3-OS matrix; a build-tag leak (Gio code in a Linux build, or TUI code in a Windows build) fails fast.
