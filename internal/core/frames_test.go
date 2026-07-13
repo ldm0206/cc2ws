@@ -122,7 +122,7 @@ func TestPumpSSEBytesStreamWritesVerbatim(t *testing.T) {
 		[]byte("data: {\"a\":2}\n\n"),
 	}}
 	rec := httptest.NewRecorder()
-	if err := pumpSSEBytes(rec, fr, true); err != nil {
+	if err := pumpSSEBytes(rec, fr, true, DialectOpenAI); err != nil {
 		t.Fatal(err)
 	}
 	if ct := rec.Header().Get("Content-Type"); ct != "text/event-stream" {
@@ -137,7 +137,7 @@ func TestPumpSSEBytesStreamWritesVerbatim(t *testing.T) {
 func TestPumpSSEBytesNonStreamReturnsJSON(t *testing.T) {
 	fr := &fakeReader{msgs: [][]byte{[]byte(`{"id":"chatcmpl-1","choices":[]}`)}}
 	rec := httptest.NewRecorder()
-	if err := pumpSSEBytes(rec, fr, false); err != nil {
+	if err := pumpSSEBytes(rec, fr, false, DialectOpenAI); err != nil {
 		t.Fatal(err)
 	}
 	if rec.Code != 200 {
@@ -154,7 +154,7 @@ func TestPumpSSEBytesNonStreamReturnsJSON(t *testing.T) {
 func TestPumpSSEBytesNonStreamErrorMaps502(t *testing.T) {
 	fr := &fakeReader{msgs: [][]byte{[]byte(`{"error":{"message":"bad"}}`)}}
 	rec := httptest.NewRecorder()
-	if err := pumpSSEBytes(rec, fr, false); err != nil {
+	if err := pumpSSEBytes(rec, fr, false, DialectOpenAI); err != nil {
 		t.Fatal(err)
 	}
 	if rec.Code != 502 {
@@ -170,7 +170,7 @@ func TestPumpTypedJSONStreamEmitsSSE(t *testing.T) {
 		[]byte(`{"type":"response.completed","response":{"id":"r1"}}`), // should NOT appear (terminal stops)
 	}}
 	rec := httptest.NewRecorder()
-	if err := pumpTypedJSON(rec, fr, true); err != nil {
+	if err := pumpTypedJSON(rec, fr, true, DialectResponses, time.Unix(0, 0)); err != nil {
 		t.Fatal(err)
 	}
 	body := rec.Body.String()
@@ -198,7 +198,7 @@ func TestPumpTypedJSONNonStreamReturnsResponseObject(t *testing.T) {
 		[]byte(`{"type":"response.completed","response":{"id":"r1","status":"completed"}}`),
 	}}
 	rec := httptest.NewRecorder()
-	if err := pumpTypedJSON(rec, fr, false); err != nil {
+	if err := pumpTypedJSON(rec, fr, false, DialectResponses, time.Unix(0, 0)); err != nil {
 		t.Fatal(err)
 	}
 	if rec.Code != 200 {
@@ -218,7 +218,7 @@ func TestPumpTypedJSONNonStreamErrorMaps502(t *testing.T) {
 		[]byte(`{"type":"response.failed","error":{"message":"boom"}}`),
 	}}
 	rec := httptest.NewRecorder()
-	if err := pumpTypedJSON(rec, fr, false); err != nil {
+	if err := pumpTypedJSON(rec, fr, false, DialectResponses, time.Unix(0, 0)); err != nil {
 		t.Fatal(err)
 	}
 	if rec.Code != 502 {
@@ -237,7 +237,7 @@ func TestPumpSSEBytesStreamTimeoutWritesSSEError(t *testing.T) {
 		[]byte("data: {\"a\":1}\n\n"),
 	}}
 	rec := httptest.NewRecorder()
-	err := pumpSSEBytes(rec, fr, true)
+	err := pumpSSEBytes(rec, fr, true, DialectOpenAI)
 	if !errors.Is(err, errReadTimeout) {
 		t.Errorf("err=%v want errReadTimeout", err)
 	}
@@ -255,7 +255,7 @@ func TestPumpSSEBytesStreamTimeoutWritesSSEError(t *testing.T) {
 func TestPumpSSEBytesNonStreamTimeoutReturns504Path(t *testing.T) {
 	fr := &fakeTimeoutReader{} // immediate timeout, no frames
 	rec := httptest.NewRecorder()
-	err := pumpSSEBytes(rec, fr, false)
+	err := pumpSSEBytes(rec, fr, false, DialectOpenAI)
 	if !errors.Is(err, errReadTimeout) {
 		t.Errorf("err=%v want errReadTimeout", err)
 	}
@@ -264,6 +264,61 @@ func TestPumpSSEBytesNonStreamTimeoutReturns504Path(t *testing.T) {
 	}
 	if rec.Code != http.StatusOK {
 		t.Errorf("code=%d want 200 (default; pump must not call WriteHeader)", rec.Code)
+	}
+}
+
+// SSEBytes pump 超时 + Anthropic 方言 → 写出 Anthropic error 事件(无 code)。
+func TestPumpSSEBytesStreamTimeoutAnthropicDialect(t *testing.T) {
+	fr := &fakeTimeoutReader{msgs: [][]byte{
+		[]byte("data: {\"a\":1}\n\n"),
+	}}
+	rec := httptest.NewRecorder()
+	err := pumpSSEBytes(rec, fr, true, DialectAnthropic)
+	if !errors.Is(err, errReadTimeout) {
+		t.Errorf("err=%v want errReadTimeout", err)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "event: error\n") {
+		t.Errorf("missing SSE error event: %q", body)
+	}
+	if !strings.Contains(body, `"type":"error"`) {
+		t.Errorf("missing Anthropic type:error wrapper: %q", body)
+	}
+	if !strings.Contains(body, `"type":"proxy_error"`) {
+		t.Errorf("missing inner type: %q", body)
+	}
+	if !strings.Contains(body, `"message":"upstream read timeout"`) {
+		t.Errorf("missing message: %q", body)
+	}
+	if strings.Contains(body, `"code"`) {
+		t.Errorf("Anthropic frame must not carry code: %q", body)
+	}
+}
+
+// TypedJSON pump 超时 + Responses 方言 → 写出 response.failed 事件。
+func TestPumpTypedJSONStreamTimeoutResponsesDialect(t *testing.T) {
+	fr := &fakeTimeoutReader{msgs: [][]byte{
+		[]byte(`{"type":"response.created"}`),
+		[]byte(`{"type":"response.output_text.delta","delta":"hi"}`),
+	}}
+	rec := httptest.NewRecorder()
+	start := time.Unix(1700000000, 0)
+	err := pumpTypedJSON(rec, fr, true, DialectResponses, start)
+	if !errors.Is(err, errReadTimeout) {
+		t.Errorf("err=%v want errReadTimeout", err)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "event: response.failed\n") {
+		t.Errorf("missing response.failed event: %q", body)
+	}
+	if !strings.Contains(body, `"sequence_number":2`) { // two frames emitted before timeout
+		t.Errorf("missing sequence_number=2: %q", body)
+	}
+	if !strings.Contains(body, `"created_at":1700000000`) {
+		t.Errorf("missing created_at: %q", body)
+	}
+	if !strings.Contains(body, `"status":"failed"`) {
+		t.Errorf("missing status failed: %q", body)
 	}
 }
 

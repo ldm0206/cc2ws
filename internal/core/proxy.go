@@ -51,7 +51,7 @@ func (c *idleConn) ReadMessage() (int, []byte, error) {
 
 // newProxyHandler builds a per-request HTTP handler that dials one upstream WS,
 // sends the raw JSON body as a single text message, and pumps frames back.
-func newProxyHandler(cfg Config, mode FrameMode) http.HandlerFunc {
+func newProxyHandler(cfg Config, mode FrameMode, dialect ErrorDialect) http.HandlerFunc {
 	dialer := &websocket.Dialer{
 		TLSClientConfig:  &tls.Config{InsecureSkipVerify: cfg.InsecureSkipTLSVerify},
 		HandshakeTimeout: cfg.ConnectTimeout,
@@ -97,9 +97,9 @@ func newProxyHandler(cfg Config, mode FrameMode) http.HandlerFunc {
 		var pumpErr error
 		switch mode {
 		case FrameModeTypedJSON:
-			pumpErr = pumpTypedJSON(w, reader, true)
+			pumpErr = pumpTypedJSON(w, reader, true, dialect, time.Now())
 		default:
-			pumpErr = pumpSSEBytes(w, reader, true)
+			pumpErr = pumpSSEBytes(w, reader, true, dialect)
 		}
 		if pumpErr != nil {
 			if errors.Is(pumpErr, errReadTimeout) {

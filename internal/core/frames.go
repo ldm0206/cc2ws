@@ -114,15 +114,6 @@ func flush(w http.ResponseWriter) {
 	}
 }
 
-// writeSSETimeoutError emits a best-effort SSE error frame on an already-streaming
-// response whose upstream read timed out. Used only after the first frame has been
-// flushed (headers committed), so the status code can no longer be changed.
-func writeSSETimeoutError(w http.ResponseWriter) {
-	_, _ = fmt.Fprintf(w, "event: error\ndata: %s\n\n",
-		`{"error":{"type":"proxy_error","message":"upstream read timeout"}}`)
-	flush(w)
-}
-
 // ErrorDialect selects the shape of the terminal error frame the proxy emits
 // for its OWN faults (e.g. upstream read timeout) on an already-streaming
 // response. Decided by route, orthogonal to FrameMode (which selects the data
@@ -185,7 +176,7 @@ func writeErrorFrame(w http.ResponseWriter, d ErrorDialect, msg string, seq int,
 //                (so the proxy can still emit 504).
 // stream=false → buffer to a single application/json body; map upstream error
 //                status code when present (4xx/5xx), else 502.
-func pumpSSEBytes(w http.ResponseWriter, r messageReader, stream bool) error {
+func pumpSSEBytes(w http.ResponseWriter, r messageReader, stream bool, dialect ErrorDialect) error {
 	if stream {
 		setSSEHeaders(w)
 		emitted := false
@@ -194,7 +185,7 @@ func pumpSSEBytes(w http.ResponseWriter, r messageReader, stream bool) error {
 			if err != nil {
 				if e := classifyReadError(err); e != nil {
 					if emitted {
-						writeSSETimeoutError(w)
+						writeErrorFrame(w, dialect, "upstream read timeout", 0, time.Time{})
 					}
 					return e
 				}
@@ -238,16 +229,16 @@ func pumpSSEBytes(w http.ResponseWriter, r messageReader, stream bool) error {
 //                best-effort SSE error frame is written before returning errReadTimeout.
 // stream=false → aggregate until terminal; return response.completed.response (200)
 //                or the terminal failure event body (status mapped from code, else 502).
-func pumpTypedJSON(w http.ResponseWriter, r messageReader, stream bool) error {
+func pumpTypedJSON(w http.ResponseWriter, r messageReader, stream bool, dialect ErrorDialect, startedAt time.Time) error {
 	if stream {
 		setSSEHeaders(w)
-		emitted := false
+		emitted := 0
 		for {
 			_, data, err := r.ReadMessage()
 			if err != nil {
 				if e := classifyReadError(err); e != nil {
-					if emitted {
-						writeSSETimeoutError(w)
+					if emitted > 0 {
+						writeErrorFrame(w, dialect, "upstream read timeout", emitted, startedAt)
 					}
 					return e
 				}
@@ -259,7 +250,7 @@ func pumpTypedJSON(w http.ResponseWriter, r messageReader, stream bool) error {
 			_ = json.Unmarshal(data, &head)
 			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", head.Type, data)
 			flush(w)
-			emitted = true
+			emitted++
 			if terminalResponseEvents[head.Type] {
 				return nil
 			}

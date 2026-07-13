@@ -50,7 +50,7 @@ func TestProxySSEBytesStreamEndToEnd(t *testing.T) {
 		_ = c.WriteMessage(websocket.TextMessage, []byte("data: {\"ok\":true}\n\n"))
 		_ = c.WriteMessage(websocket.TextMessage, []byte("data: [DONE]\n\n"))
 	})
-	srv := httptest.NewServer(newProxyHandler(testCfg(upstream), FrameModeSSEBytes))
+	srv := httptest.NewServer(newProxyHandler(testCfg(upstream), FrameModeSSEBytes, DialectOpenAI))
 	t.Cleanup(srv.Close)
 
 	resp, err := http.Post(srv.URL+"/v1/chat/completions", "application/json",
@@ -76,7 +76,7 @@ func TestProxyTypedJSONStreamEndToEnd(t *testing.T) {
 		_ = c.WriteMessage(websocket.TextMessage, []byte(`{"type":"response.created"}`))
 		_ = c.WriteMessage(websocket.TextMessage, []byte(`{"type":"response.completed","response":{"id":"r1"}}`))
 	})
-	srv := httptest.NewServer(newProxyHandler(testCfg(upstream), FrameModeTypedJSON))
+	srv := httptest.NewServer(newProxyHandler(testCfg(upstream), FrameModeTypedJSON, DialectResponses))
 	t.Cleanup(srv.Close)
 
 	resp, err := http.Post(srv.URL+"/v1/responses", "application/json",
@@ -112,7 +112,7 @@ func TestProxyForwardsAuthHeaders(t *testing.T) {
 	t.Cleanup(srv.Close)
 	wsURL, _ := swapScheme(srv.URL)
 
-	proxySrv := httptest.NewServer(newProxyHandler(testCfg(wsURL), FrameModeSSEBytes))
+	proxySrv := httptest.NewServer(newProxyHandler(testCfg(wsURL), FrameModeSSEBytes, DialectOpenAI))
 	t.Cleanup(proxySrv.Close)
 
 	req, _ := http.NewRequest("POST", proxySrv.URL+"/v1/messages", strings.NewReader(`{"model":"x","messages":[]}`))
@@ -146,7 +146,7 @@ case <-time.After(time.Second):
 
 func TestProxyDialFailureReturns502(t *testing.T) {
 	// port 1 is reserved/unreachable → dial fails fast
-	srv := httptest.NewServer(newProxyHandler(testCfg("ws://127.0.0.1:1"), FrameModeSSEBytes))
+	srv := httptest.NewServer(newProxyHandler(testCfg("ws://127.0.0.1:1"), FrameModeSSEBytes, DialectOpenAI))
 	t.Cleanup(srv.Close)
 
 	resp, err := http.Post(srv.URL+"/v1/messages", "application/json",
@@ -165,7 +165,7 @@ func TestProxyInvalidJSONReturns400(t *testing.T) {
 	// is still read and sent upstream. The dial here targets an unreachable
 	// port, so the proxy surfaces a 502 — proving the body was not rejected
 	// locally as 400.
-	srv := httptest.NewServer(newProxyHandler(testCfg("ws://127.0.0.1:1"), FrameModeSSEBytes))
+	srv := httptest.NewServer(newProxyHandler(testCfg("ws://127.0.0.1:1"), FrameModeSSEBytes, DialectOpenAI))
 	t.Cleanup(srv.Close)
 
 	resp, err := http.Post(srv.URL+"/v1/messages", "application/json",
@@ -189,7 +189,7 @@ func TestProxyDialTimeoutReturns504(t *testing.T) {
 		ConnectTimeout: 250 * time.Millisecond,
 		IdleTimeout:    time.Second,
 	}
-	srv := httptest.NewServer(newProxyHandler(cfg, FrameModeSSEBytes))
+	srv := httptest.NewServer(newProxyHandler(cfg, FrameModeSSEBytes, DialectOpenAI))
 	t.Cleanup(srv.Close)
 
 	resp, err := http.Post(srv.URL+"/v1/messages", "application/json",
@@ -224,7 +224,7 @@ func TestProxyForwardsMultiValueHeader(t *testing.T) {
 	t.Cleanup(srv.Close)
 	wsURL, _ := swapScheme(srv.URL)
 
-	proxySrv := httptest.NewServer(newProxyHandler(testCfg(wsURL), FrameModeSSEBytes))
+	proxySrv := httptest.NewServer(newProxyHandler(testCfg(wsURL), FrameModeSSEBytes, DialectOpenAI))
 	t.Cleanup(proxySrv.Close)
 
 	req, _ := http.NewRequest("POST", proxySrv.URL+"/v1/messages", strings.NewReader(`{"model":"x","messages":[]}`))
