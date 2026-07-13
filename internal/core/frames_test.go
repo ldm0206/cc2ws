@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 type fakeReader struct {
@@ -47,6 +48,73 @@ type timeoutErr struct{}
 func (timeoutErr) Error() string   { return "i/o timeout" }
 func (timeoutErr) Timeout() bool   { return true }
 func (timeoutErr) Temporary() bool { return true }
+
+func TestWriteErrorFrameOpenAI(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writeErrorFrame(rec, DialectOpenAI, "upstream read timeout", 0, time.Time{})
+	body := rec.Body.String()
+	if !strings.Contains(body, "event: error\n") {
+		t.Errorf("missing SSE error event: %q", body)
+	}
+	if !strings.Contains(body, `"type":"proxy_error"`) {
+		t.Errorf("missing type: %q", body)
+	}
+	if !strings.Contains(body, `"code":"upstream_timeout"`) {
+		t.Errorf("missing code: %q", body)
+	}
+	if !strings.Contains(body, `"message":"upstream read timeout"`) {
+		t.Errorf("missing message: %q", body)
+	}
+	if strings.Contains(body, `"response"`) {
+		t.Errorf("OpenAI frame must not carry response object: %q", body)
+	}
+}
+
+func TestWriteErrorFrameAnthropic(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writeErrorFrame(rec, DialectAnthropic, "upstream read timeout", 0, time.Time{})
+	body := rec.Body.String()
+	if !strings.Contains(body, "event: error\n") {
+		t.Errorf("missing SSE error event: %q", body)
+	}
+	if !strings.Contains(body, `"type":"error"`) {
+		t.Errorf("missing Anthropic type:error wrapper: %q", body)
+	}
+	if !strings.Contains(body, `"type":"proxy_error"`) {
+		t.Errorf("missing inner type: %q", body)
+	}
+	if !strings.Contains(body, `"message":"upstream read timeout"`) {
+		t.Errorf("missing message: %q", body)
+	}
+	if strings.Contains(body, `"code"`) {
+		t.Errorf("Anthropic frame must not carry code: %q", body)
+	}
+}
+
+func TestWriteErrorFrameResponses(t *testing.T) {
+	start := time.Unix(1700000000, 0)
+	rec := httptest.NewRecorder()
+	writeErrorFrame(rec, DialectResponses, "upstream read timeout", 3, start)
+	body := rec.Body.String()
+	if !strings.Contains(body, "event: response.failed\n") {
+		t.Errorf("missing response.failed event: %q", body)
+	}
+	if !strings.Contains(body, `"sequence_number":3`) {
+		t.Errorf("missing sequence_number=3: %q", body)
+	}
+	if !strings.Contains(body, `"created_at":1700000000`) {
+		t.Errorf("missing created_at: %q", body)
+	}
+	if !strings.Contains(body, `"status":"failed"`) {
+		t.Errorf("missing status failed: %q", body)
+	}
+	if !strings.Contains(body, `"type":"proxy_error"`) || !strings.Contains(body, `"code":"upstream_timeout"`) {
+		t.Errorf("missing error type/code: %q", body)
+	}
+	if !strings.Contains(body, `"message":"upstream read timeout"`) {
+		t.Errorf("missing message: %q", body)
+	}
+}
 
 func TestPumpSSEBytesStreamWritesVerbatim(t *testing.T) {
 	fr := &fakeReader{msgs: [][]byte{

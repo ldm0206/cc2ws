@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"time"
 )
 
 // FrameMode selects how upstream WS text frames are turned into an HTTP response.
@@ -119,6 +120,60 @@ func flush(w http.ResponseWriter) {
 func writeSSETimeoutError(w http.ResponseWriter) {
 	_, _ = fmt.Fprintf(w, "event: error\ndata: %s\n\n",
 		`{"error":{"type":"proxy_error","message":"upstream read timeout"}}`)
+	flush(w)
+}
+
+// ErrorDialect selects the shape of the terminal error frame the proxy emits
+// for its OWN faults (e.g. upstream read timeout) on an already-streaming
+// response. Decided by route, orthogonal to FrameMode (which selects the data
+// pump). Upstream-pushed frames are always passed through verbatim — this only
+// governs proxy-generated terminal frames.
+type ErrorDialect int
+
+const (
+	DialectOpenAI ErrorDialect = iota // /v1/chat/completions
+	DialectAnthropic                   // /v1/messages, /anthropic/v1/messages
+	DialectResponses                   // /v1/responses, /v1/responses/compact
+)
+
+// writeErrorFrame emits the proxy's own terminal error frame on an
+// already-streaming response, in the dialect the client's route speaks.
+// msg is the human message; type is always "proxy_error" and code
+// "upstream_timeout" (the only current caller is the read-timeout path).
+// seq and startedAt fill the Responses response.failed frame and are ignored
+// by the other dialects.
+func writeErrorFrame(w http.ResponseWriter, d ErrorDialect, msg string, seq int, startedAt time.Time) {
+	switch d {
+	case DialectAnthropic:
+		payload := map[string]any{
+			"type":  "error",
+			"error": map[string]any{"type": "proxy_error", "message": msg},
+		}
+		b, _ := json.Marshal(payload)
+		_, _ = fmt.Fprintf(w, "event: error\ndata: %s\n\n", b)
+	case DialectResponses:
+		payload := map[string]any{
+			"type":            "response.failed",
+			"sequence_number": seq,
+			"response": map[string]any{
+				"id":         "resp_proxy_error",
+				"object":     "response",
+				"created_at": startedAt.Unix(),
+				"model":      "",
+				"output":     []any{},
+				"status":     "failed",
+				"error":      map[string]any{"type": "proxy_error", "code": "upstream_timeout", "message": msg},
+			},
+		}
+		b, _ := json.Marshal(payload)
+		_, _ = fmt.Fprintf(w, "event: response.failed\ndata: %s\n\n", b)
+	default: // DialectOpenAI
+		payload := map[string]any{
+			"error": map[string]any{"type": "proxy_error", "code": "upstream_timeout", "message": msg},
+		}
+		b, _ := json.Marshal(payload)
+		_, _ = fmt.Fprintf(w, "event: error\ndata: %s\n\n", b)
+	}
 	flush(w)
 }
 
